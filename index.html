@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="auto">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>步步为营 Quoridor — 挡板棋 · 双人 / 四人 · PVP / PVE</title>
+    <meta name="description" content="开源网页版步步为营（Quoridor）：双人 / 四人对战，真人 / 电脑任意组合，系统·白天·黑夜三档主题，纯前端无依赖。">
+    <style>
+        :root {
+            --bg:#f4f6f9; --card:#ffffff; --line:#e4e8ef; --line-soft:#eef1f6;
+            --text:#1f2937; --muted:#6b7280; --brand:#4f46e5; --green:#10b981; --red:#dc2626;
+            --h1:#111827; --label:#4b5563; --hint:#b3bdcc; --footer:#9aa5b4;
+            --btn-bg:#ffffff; --btn-border:#d5dbe4; --btn-text:#374151;
+            --btn-hover-bg:#f6f8fb; --btn-hover-border:#c2cad7;
+            --btn-off-bg:#f9fafb;
+            --btn-on-bg:#f5f3ff; --btn-on-border:#c4b5fd; --btn-on-text:#4c1d95;
+            --input-bg:#ffffff; --input-border:#d5dbe4;
+            --board-bg:#e7d3ac; --board-edge:#c9b184; --cell:#f8efdc; --cell-line:#dcc79c;
+            --wall:#7a5230; --wall-edge:#5c3c20;
+            --goal-dim:0.55; --piece-ring:#ffffff;
+            --hist-bg:#f8fafc; --overlay:rgba(17,24,39,0.45);
+            --shadow:0 1px 2px rgba(16,24,40,0.05);
+        }
+        :root[data-theme="dark"] {
+            --bg:#0e1118; --card:#161b26; --line:#262d3d; --line-soft:#1f2634;
+            --text:#e6eaf2; --muted:#9aa4b8; --brand:#8b83f7; --green:#34d399; --red:#f87171;
+            --h1:#f1f4fa; --label:#9aa4b8; --hint:#6b7590; --footer:#7b869c;
+            --btn-bg:#1e2432; --btn-border:#2e3648; --btn-text:#cfd6e4;
+            --btn-hover-bg:#242b3c; --btn-hover-border:#3a4358;
+            --btn-off-bg:#1a1f2b;
+            --btn-on-bg:#2a2640; --btn-on-border:#4c3f8a; --btn-on-text:#c4b5fd;
+            --input-bg:#1a1f2b; --input-border:#2e3648;
+            --board-bg:#1d2433; --board-edge:#39415a; --cell:#293349; --cell-line:#37425e;
+            --wall:#9db2d8; --wall-edge:#6d83ad;
+            --goal-dim:0.65; --piece-ring:#0b0e14;
+            --hist-bg:#1b2130; --overlay:rgba(5,8,14,0.62);
+            --shadow:0 1px 2px rgba(0,0,0,0.35);
+        }
+        @media (prefers-color-scheme: dark) { :root[data-theme="auto"] {
+            --bg:#0e1118; --card:#161b26; --line:#262d3d; --line-soft:#1f2634;
+            --text:#e6eaf2; --muted:#9aa4b8; --brand:#8b83f7; --green:#34d399; --red:#f87171;
+            --h1:#f1f4fa; --label:#9aa4b8; --hint:#6b7590; --footer:#7b869c;
+            --btn-bg:#1e2432; --btn-border:#2e3648; --btn-text:#cfd6e4;
+            --btn-hover-bg:#242b3c; --btn-hover-border:#3a4358;
+            --btn-off-bg:#1a1f2b;
+            --btn-on-bg:#2a2640; --btn-on-border:#4c3f8a; --btn-on-text:#c4b5fd;
+            --input-bg:#1a1f2b; --input-border:#2e3648;
+            --board-bg:#1d2433; --board-edge:#39415a; --cell:#293349; --cell-line:#37425e;
+            --wall:#9db2d8; --wall-edge:#6d83ad;
+            --goal-dim:0.65; --piece-ring:#0b0e14;
+            --hist-bg:#1b2130; --overlay:rgba(5,8,14,0.62);
+            --shadow:0 1px 2px rgba(0,0,0,0.35);
+        } }
+        * { margin:0; padding:0; box-sizing:border-box; font-family:'Segoe UI',-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',Roboto,Helvetica,Arial,sans-serif; }
+        html, body { height:100%; }
+        body { background:var(--bg); color:var(--text); overflow:hidden; -webkit-font-smoothing:antialiased; }
+        .app { height:100vh; max-width:1280px; margin:0 auto; padding:12px 16px; display:flex; flex-direction:column; gap:10px; }
+        header { flex:0 0 auto; display:flex; align-items:baseline; justify-content:space-between; gap:16px; padding:10px 18px; background:var(--card); border:1px solid var(--line); border-radius:12px; box-shadow:var(--shadow); }
+        h1 { display:flex; align-items:center; gap:9px; font-size:1.12rem; font-weight:600; letter-spacing:-0.01em; color:var(--h1); }
+        h1 .logo { display:flex; align-items:center; justify-content:center; width:26px; height:26px; border-radius:8px; background:linear-gradient(135deg,#d9a05b,#7a5230); font-size:14px; line-height:1; }
+        .head-right { display:flex; align-items:baseline; flex-wrap:wrap; gap:14px; }
+        .subtitle { font-size:0.76rem; color:var(--muted); }
+        .btn-sm { padding:4px 10px; font-size:0.7rem; }
+        .main-layout { flex:1 1 auto; min-height:0; display:flex; gap:10px; }
+        .panel { display:flex; flex-direction:column; min-height:0; background:var(--card); border:1px solid var(--line); border-radius:12px; padding:12px; box-shadow:var(--shadow); }
+        .panel h2 { flex:0 0 auto; display:flex; align-items:center; gap:6px; margin-bottom:8px; font-size:0.68rem; font-weight:600; letter-spacing:0.07em; text-transform:uppercase; color:var(--muted); }
+        .sidebar { flex:0 0 340px; gap:9px; overflow-y:auto; overflow-x:hidden; }
+        .side-block { flex:0 0 auto; display:flex; flex-direction:column; min-height:0; }
+        .stage { flex:1 1 auto; min-width:0; }
+        .stage-head { flex:0 0 auto; display:flex; align-items:center; justify-content:space-between; gap:14px; margin-bottom:9px; flex-wrap:wrap; }
+        .stage-head h2 { margin-bottom:0; }
+        .mode-toggle { display:flex; gap:6px; }
+        .canvas-wrap { position:relative; flex:1 1 auto; min-height:0; display:flex; align-items:center; justify-content:center; }
+        .canvas-wrap canvas { display:block; border-radius:10px; box-shadow:inset 0 0 0 1px var(--line-soft); touch-action:none; }
+        .status-bar { flex:0 0 auto; margin-top:9px; padding:8px 12px; font-size:0.84rem; color:var(--text); background:var(--hist-bg); border:1px solid var(--line-soft); border-radius:9px; text-align:center; min-height:36px; }
+        .status-bar b { font-weight:600; }
+        button { padding:8px 14px; font-size:0.8rem; font-weight:500; color:var(--btn-text); background:var(--btn-bg); border:1px solid var(--btn-border); border-radius:8px; cursor:pointer; box-shadow:0 1px 2px rgba(16,24,40,0.04); transition:background .15s,border-color .15s,color .15s,transform .06s; }
+        button:hover { background:var(--btn-hover-bg); border-color:var(--btn-hover-border); }
+        button:active { transform:translateY(1px); }
+        button:disabled { opacity:.45; cursor:not-allowed; }
+        button[aria-pressed="true"] { background:var(--btn-on-bg); border-color:var(--btn-on-border); color:var(--btn-on-text); }
+        button[aria-pressed="false"] { color:var(--muted); background:var(--btn-off-bg); }
+        button.primary { color:#fff; background:var(--brand); border-color:var(--brand); }
+        button.primary:hover { filter:brightness(1.08); background:var(--brand); }
+        .controls { display:flex; flex-wrap:wrap; gap:7px; }
+        .controls button { flex:1 1 auto; }
+        /* ---------------- 玩家卡片 ---------------- */
+        .player-card { display:flex; flex-direction:column; gap:6px; padding:9px 11px; margin-bottom:7px; background:var(--hist-bg); border:1px solid var(--line-soft); border-radius:10px; border-left:4px solid transparent; transition:border-color .2s, box-shadow .2s; }
+        .player-card.turn { border-left-color:var(--pc,#888); box-shadow:0 0 0 1px var(--pc,#888) inset; }
+        .player-card.win { border-left-color:var(--pc,#888); box-shadow:0 0 0 2px var(--pc,#888) inset; }
+        .pc-row1 { display:flex; align-items:center; gap:8px; }
+        .pc-dot { width:13px; height:13px; border-radius:50%; background:var(--pc,#888); border:2px solid var(--piece-ring); flex:0 0 auto; }
+        .pc-name { font-size:0.86rem; font-weight:600; color:var(--h1); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .pc-tag { margin-left:auto; flex:0 0 auto; font-size:0.64rem; color:var(--muted); border:1px solid var(--line); border-radius:999px; padding:2px 8px; white-space:nowrap; }
+        .pc-row2 { display:flex; align-items:center; gap:8px; font-size:0.7rem; color:var(--muted); }
+        .pc-walls { display:flex; gap:3px; flex-wrap:wrap; }
+        .pc-wall { width:14px; height:6px; border-radius:2px; background:var(--wall); }
+        .pc-wall.used { background:var(--line); }
+        .pc-dist { margin-left:auto; font-variant-numeric:tabular-nums; }
+        .pc-dist b { color:var(--text); }
+        /* ---------------- 历史 ---------------- */
+        .history { max-height:180px; overflow-y:auto; display:flex; flex-direction:column; gap:3px; font-size:0.74rem; font-variant-numeric:tabular-nums; }
+        .hist-item { display:flex; gap:7px; padding:3px 8px; background:var(--hist-bg); border:1px solid var(--line-soft); border-radius:6px; color:var(--muted); }
+        .hist-item .no { flex:0 0 22px; color:var(--hint); }
+        .hist-item .who { flex:0 0 auto; font-weight:600; }
+        .hist-item .what { margin-left:auto; color:var(--text); }
+        .hist-empty { color:var(--hint); font-size:0.74rem; text-align:center; padding:8px 0; }
+        /* ---------------- 弹层 ---------------- */
+        .overlay { position:fixed; inset:0; z-index:50; display:flex; align-items:center; justify-content:center; padding:18px; background:var(--overlay); backdrop-filter:blur(2px); }
+        .overlay.hidden, .hidden { display:none !important; }
+        .modal { width:min(560px, 100%); max-height:calc(100vh - 40px); overflow-y:auto; background:var(--card); border:1px solid var(--line); border-radius:14px; padding:20px 22px; box-shadow:0 18px 50px rgba(16,24,40,0.25); }
+        .modal h2 { margin:0 0 4px; font-size:1.05rem; color:var(--h1); letter-spacing:0; text-transform:none; }
+        .modal .sub { margin:0 0 14px; font-size:0.78rem; color:var(--muted); }
+        .field-group { display:flex; flex-direction:column; gap:6px; margin-bottom:14px; }
+        .field-group > label { font-size:0.75rem; color:var(--label); font-weight:600; }
+        .seg-row { display:flex; gap:7px; }
+        .seg-row button { flex:1 1 auto; }
+        .seat-row { display:flex; align-items:center; gap:8px; padding:8px 10px; margin-bottom:6px; background:var(--hist-bg); border:1px solid var(--line-soft); border-radius:10px; flex-wrap:wrap; }
+        .seat-row.off { opacity:.5; }
+        .seat-dot { width:12px; height:12px; border-radius:50%; border:2px solid var(--piece-ring); flex:0 0 auto; }
+        .seat-name { flex:1 1 90px; min-width:0; }
+        .seat-name input { width:100%; padding:5px 9px; font-size:0.8rem; color:var(--text); background:var(--input-bg); border:1px solid var(--input-border); border-radius:7px; }
+        .seat-name input:focus { outline:none; border-color:var(--brand); }
+        .seat-type { display:flex; gap:4px; flex:0 0 auto; }
+        .seat-type button { padding:4px 9px; font-size:0.7rem; }
+        .seat-ai { flex:0 0 auto; }
+        .seat-ai select { padding:4px 7px; font-size:0.72rem; color:var(--btn-text); background:var(--input-bg); border:1px solid var(--input-border); border-radius:7px; }
+        .modal-actions { display:flex; gap:9px; margin-top:6px; }
+        .modal-actions button { flex:1 1 auto; padding:10px; font-size:0.86rem; }
+        .win-modal { text-align:center; }
+        .win-modal .crown { font-size:44px; line-height:1; margin-bottom:8px; }
+        .win-modal h2 { font-size:1.3rem; }
+        .win-modal .sub { margin-bottom:18px; }
+        .win-modal .crown, .win-modal h2 { color:var(--win-color,#111); }
+        /* ---------------- 规则折叠 ---------------- */
+        details.rules-block { border:1px solid var(--line-soft); border-radius:10px; padding:8px 12px; background:var(--hist-bg); }
+        details.rules-block summary { font-size:0.78rem; font-weight:600; color:var(--label); cursor:pointer; }
+        details.rules-block ol { margin:8px 0 2px; padding-left:20px; font-size:0.76rem; color:var(--muted); line-height:1.65; }
+        footer { flex:0 0 auto; text-align:center; font-size:0.69rem; color:var(--footer); }
+        footer a { color:var(--footer); text-decoration:none; }
+        footer a:hover { color:var(--brand); }
+        .toast { position:fixed; top:16px; left:50%; z-index:999; padding:9px 20px; font-size:0.82rem; color:#fff; background:#111827; border-radius:9px; box-shadow:0 8px 24px rgba(16,24,40,0.18); transform:translateX(-50%) translateY(-300%); transition:transform .35s cubic-bezier(.34,1.4,.64,1); pointer-events:none; }
+        .toast.show { transform:translateX(-50%) translateY(0); }
+        .toast.error { background:#dc2626; }
+        @media (max-height:860px) { .app { padding:10px 14px; gap:8px; } .panel { padding:10px; } .panel h2 { margin-bottom:7px; } .history { max-height:120px; } }
+        @media (max-width:960px) { body { overflow:auto; } .app { height:auto; min-height:100vh; } .main-layout { flex-direction:column; } .sidebar { flex:0 0 auto; overflow:visible; } .canvas-wrap { height:min(92vw, 560px); } }
+    </style>
+</head>
+<body>
+<div class="app">
+    <header>
+        <h1><span class="logo">🧱</span>步步为营 · Quoridor</h1>
+        <div class="head-right">
+            <span class="subtitle">挡板棋 · 双人 / 四人 · PVP / PVE · 纯前端</span>
+            <button id="themeBtn" type="button" class="btn-sm">🌗 Auto</button>
+        </div>
+    </header>
+
+    <div class="main-layout">
+        <div class="panel stage">
+            <div class="stage-head">
+                <h2>棋盘</h2>
+                <div class="mode-toggle">
+                    <button id="modeMoveBtn" type="button" aria-pressed="true">♟ 走子</button>
+                    <button id="modeWallBtn" type="button" aria-pressed="false">🧱 放墙</button>
+                </div>
+            </div>
+            <div class="canvas-wrap"><canvas id="board" width="600" height="600"></canvas></div>
+            <div class="status-bar" id="statusBar">—</div>
+        </div>
+
+        <aside class="panel sidebar">
+            <section class="side-block">
+                <h2>玩家</h2>
+                <div id="playersList"></div>
+            </section>
+            <section class="side-block">
+                <h2>操作</h2>
+                <div class="controls">
+                    <button id="undoBtn" type="button">↩ 悔棋</button>
+                    <button id="newGameBtn" type="button">⚙ 新开一局</button>
+                </div>
+            </section>
+            <section class="side-block">
+                <h2>历史</h2>
+                <div id="historyList" class="history"><div class="hist-empty">对局尚未开始</div></div>
+            </section>
+            <section class="side-block">
+                <h2>说明</h2>
+                <details class="rules-block">
+                    <summary>规则速览</summary>
+                    <ol>
+                        <li>把自己的棋子走到<b>对面底边</b>即获胜；轮到你时走一格（上下左右），或花费一块挡板。</li>
+                        <li>挡板长两格，放在格与格之间的凹槽里；不能与已有挡板重叠或十字交叉。</li>
+                        <li>任何挡板都<b>不允许把某位玩家完全围死</b>——必须有路可走到目标边。</li>
+                        <li>紧邻对手时可以<b>跳过</b>它（直线跳）；若正前方被挡板或棋子挡住，可<b>斜跳</b>到其侧边。</li>
+                        <li>双人局每人 10 块挡板；四人局每人 5 块，先抵达对面者胜。</li>
+                        <li>放墙模式：移动鼠标到格线交点附近，横向偏移→水平墙，纵向偏移→垂直墙。</li>
+                    </ol>
+                </details>
+            </section>
+        </aside>
+    </div>
+
+    <footer>
+        <a href="https://github.com/22ABLE22/quoridor" target="_blank" rel="noopener">源码仓库</a>
+        · 步步为营 / Quoridor 网页复刻 · 源代码 MIT License
+    </footer>
+</div>
+
+<div id="setupOverlay" class="overlay">
+    <div class="modal">
+        <h2>新开一局</h2>
+        <p class="sub">选择对局人数与每个座位的玩家类型（真人 / 电脑 / 空）</p>
+        <div class="field-group">
+            <label>对局模式</label>
+            <div class="seg-row" id="modeSeg">
+                <button type="button" data-mode="2" aria-pressed="true">双人对战（各 10 墙）</button>
+                <button type="button" data-mode="4" aria-pressed="false">四人对战（各 5 墙）</button>
+            </div>
+        </div>
+        <div class="field-group">
+            <label>座位设置</label>
+            <div id="seatRows"></div>
+        </div>
+        <div class="modal-actions">
+            <button id="startBtn" type="button" class="primary">开始对局</button>
+        </div>
+    </div>
+</div>
+
+<div id="winOverlay" class="overlay hidden">
+    <div class="modal win-modal">
+        <div class="crown">🏆</div>
+        <h2 id="winTitle">红方 获胜</h2>
+        <p class="sub" id="winSub">—</p>
+        <div class="modal-actions">
+            <button id="rematchBtn" type="button" class="primary">再来一局</button>
+            <button id="reconfigBtn" type="button">更改设置</button>
+        </div>
+    </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script src="js/rules.js"></script>
+<script src="js/ai.js"></script>
+<script src="js/render.js"></script>
+<script src="js/input.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

@@ -82,12 +82,13 @@ var QUI = (function () {
 
     /* ---------------- player cards ---------------- */
     /**
-     * Render player cards. winRates is an optional array (per player id) of
-     * numbers in [0,1] or null (not computed yet).
+     * Render player cards. winRates is an optional array indexed by the
+     * player's POSITION in st.players (not by seat id — seats can be skipped
+     * with 'off', so id and array index may differ).
      */
     function renderPlayers(st, winRates) {
         playersList.innerHTML = '';
-        for (const p of st.players) {
+        st.players.forEach((p, pidx) => {
             const card = document.createElement('div');
             card.className = 'player-card' +
                 (st.winner === null && st.players[st.turn].id === p.id ? ' turn' : '') +
@@ -118,12 +119,12 @@ var QUI = (function () {
                 w.className = 'pc-wall' + (i < p.wallQuota - p.walls ? ' used' : '');
                 wallsBox.appendChild(w);
             }
-            const d = QRules.distanceToGoal(st, p.id);
+            const d = QRules.distanceToGoal(st, pidx);
             card.querySelector('.pc-dist b').textContent = isFinite(d) ? d : '∞';
-            // win rate
+            // win rate (indexed by player position, matching winRates)
             const fill = card.querySelector('.pc-winrate-fill');
             const txt = card.querySelector('.pc-winrate-txt');
-            const rate = winRates ? winRates[p.id] : null;
+            const rate = winRates ? winRates[pidx] : null;
             if (st.winner === p.id) {
                 fill.style.width = '100%';
                 txt.textContent = '100%';
@@ -139,7 +140,7 @@ var QUI = (function () {
                 txt.textContent = '—';
             }
             playersList.appendChild(card);
-        }
+        });
     }
 
     /* ---------------- history ---------------- */

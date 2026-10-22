@@ -89,54 +89,28 @@ var QApp = (function () {
     }
 
     /**
-     * Update win-rate bars. Runs in the sampler worker (async, does not
-     * block the UI); falls back to a small synchronous sample otherwise.
+     * Update win-rate bars.
      *
-     * Stale tolerance: if the game advanced while we were computing (a common
-     * race in PVE — the AI replies and bumps gameEpoch), the result is still
-     * shown as long as the game exists and isn't finished. Win rate is an
-     * estimate for human reading: a one-move-old estimate beats an empty
-     * bar, and the next refresh overwrites it immediately.
+     * Computed SYNCHRONOUSLY on the main thread (deferred one tick so the
+     * board paints first). After the zero-allocation rewrite a full
+     * 120-rollout batch costs ~200 ms — far inside the interaction budget
+     * and immune to every Worker round-trip failure mode (queue starvation,
+     * boot fetch failures, stale-epoch races). The heavy AI search still
+     * runs in its own worker, so thinking never blocks the UI.
      */
     function refreshWinRates() {
         if (!st || st.winner !== null) return;
         if (!QUI.showWinRate) return;
         const epoch = ++wrEpoch;
         const snapshot = exportState();
-        const renderResult = (results) => {
-            if (epoch !== wrEpoch || !st || st.winner !== null) return;   // a newer request superseded us
-            const allNull = results.every(r => !r || typeof r.rate !== 'number');
-            if (allNull) return;   // worker idle; the sync fallback below fills in
+        setTimeout(() => {
+            if (epoch !== wrEpoch || !st || st.winner !== null) return;
             winRates = st.players.map((p, idx) => {
-                const r = results[idx];
-                return r && typeof r.rate === 'number' ? r.rate : null;
+                try { return QAI.simulateWinRate(snapshot, idx, 120); }
+                catch (e) { return null; }
             });
             QUI.renderPlayers(st, winRates);
-        };
-        const runWorker = () => {
-            const jobs = st.players.map(p => AIWorkerHelper.winRate(snapshot, p.id, 120));
-            Promise.all(jobs).then(renderResult).catch(() => {
-                if (epoch === wrEpoch) syncWinRates(snapshot, epoch);
-            });
-        };
-        if (AIWorkerHelper.available) {
-            runWorker();
-        } else {
-            AIWorkerHelper.init().then(ok => {
-                if (ok) runWorker();
-                else syncWinRates(snapshot, epoch);
-            });
-        }
-    }
-
-    /** Synchronous fallback (fewer rollouts to stay responsive). */
-    function syncWinRates(snapshot, epoch) {
-        if (epoch !== wrEpoch || !st) return;
-        winRates = st.players.map(p => {
-            try { return QAI.simulateWinRate(snapshot, p.id, 40); }
-            catch (e) { return null; }
-        });
-        QUI.renderPlayers(st, winRates);
+        }, 0);
     }
 
     function updateStatus() {

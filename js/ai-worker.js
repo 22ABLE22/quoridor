@@ -1,26 +1,28 @@
 'use strict';
 /* =========================================================================
- * AIWorkerHelper — main-thread side of the AI Web Worker(s)
+ * AIWorkerHelper — main-thread side of the AI Web Worker
  *
- * Two independent workers are created from the same inlined source:
- *   - thinker: serves 'decide' (long searches, ~2.4 s)
- *   - sampler: serves 'winrate' (fast Monte-Carlo batches, ~0.3 s)
- * Splitting them keeps win-rate refreshes from queueing behind a long AI
- * search (a single worker processes messages serially, which starved the
- * win-rate bars in PVE games).
+ * The worker source EMBEDS the full sources of js/rules.js and js/ai.js
+ * (Blob-URL workers have an opaque origin, so sync-XHR / importScripts
+ * loading silently fails — embedding sidesteps loading entirely). The main
+ * thread fetches both scripts once; under file:// fetch is blocked, in which
+ * case the helper reports unavailable and callers fall back to computing on
+ * the main thread.
+ *
+ * Only the heavy AI search runs here ('decide', ~2.4 s per move), so the
+ * UI never blocks while the AI thinks. Win-rate estimation is a short
+ * ~200 ms synchronous batch and runs on the main thread (see app.js) —
+ * that keeps it immune to worker boot/queue failures.
  *
  * Protocol (request → response, both carry an id):
- *   → { id, cmd:'decide',  state, pi, budgetMs }
- *   → { id, cmd:'winrate', state, pi, rollouts }
- *   ← { id, ok:true, action | rate } | { id, ok:false, error }
+ *   → { id, cmd:'decide', state, pi, budgetMs }
+ *   ← { id, ok:true, action } | { id, ok:false, error }
  *
- * init() ALWAYS returns a Promise<boolean>; on any failure the helper
- * reports unavailable and callers fall back to synchronous computation.
+ * init() ALWAYS returns a Promise<boolean>.
  * ========================================================================= */
 var AIWorkerHelper = (function () {
 
-    let thinker = null;      // decides
-    let sampler = null;      // win rates
+    let worker = null;
     let failed = false;
     let booting = null;
     let requestId = 0;
@@ -74,32 +76,29 @@ var AIWorkerHelper = (function () {
             else p.reject(new Error(msg.error || 'worker error'));
         };
         w.onerror = () => {
-            for (const [, p] of pending.entries()) {
+            for (const [id, p] of pending.entries()) {
                 if (p.worker !== w) continue;
                 p.reject(new Error('worker error'));
-                pending.delete(p.id);
+                pending.delete(id);
             }
             try { w.terminate(); } catch (e) { /* ignore */ }
-            if (w === thinker) thinker = null;
-            if (w === sampler) sampler = null;
-            if (!thinker && !sampler) failed = true;   // sync fallback from now on
+            worker = null;
+            failed = true;   // sync fallback from now on
         };
         return w;
     }
 
     /**
-     * Initialize both workers. Always resolves to boolean (true = ready).
+     * Initialize the worker. Always resolves to boolean (true = ready).
      * Concurrent calls share one boot.
      */
     function init() {
-        if (thinker && sampler) return Promise.resolve(true);
+        if (worker) return Promise.resolve(true);
         if (failed) return Promise.resolve(false);
         if (booting) return booting;
         booting = Promise.all([fetchText(scriptUrl('rules.js')), fetchText(scriptUrl('ai.js'))])
             .then(([rulesSrc, aiSrc]) => {
-                const src = buildWorkerSource(rulesSrc, aiSrc);
-                if (!thinker) thinker = attachWorker(src);
-                if (!sampler) sampler = attachWorker(src);
+                worker = attachWorker(buildWorkerSource(rulesSrc, aiSrc));
                 return true;
             })
             .catch(() => {
@@ -110,15 +109,14 @@ var AIWorkerHelper = (function () {
     }
 
     /**
-     * Send a command to a specific worker; resolves to the reply, or to null
-     * when unavailable (callers compute synchronously instead).
+     * Send a command; resolves to the reply, or to null when the worker is
+     * unavailable (callers compute synchronously instead).
      */
-    function send(worker, cmd, state, extra) {
+    function send(cmd, state, extra) {
         if (!worker || failed) return Promise.resolve(null);
         const id = ++requestId;
         return new Promise((resolve, reject) => {
-            const entry = { resolve, reject, worker, id };
-            pending.set(id, entry);
+            pending.set(id, { resolve, reject, worker, id });
             try {
                 worker.postMessage(Object.assign({ id, cmd, state }, extra || {}));
             } catch (e) {
@@ -130,16 +128,12 @@ var AIWorkerHelper = (function () {
     }
 
     function decide(state, pi, budgetMs) {
-        return send(thinker, 'decide', state, { pi, budgetMs });
-    }
-
-    function winRate(state, pi, rollouts) {
-        return send(sampler, 'winrate', state, { pi, rollouts });
+        return send('decide', state, { pi, budgetMs });
     }
 
     return {
-        init, decide, winRate,
-        get available() { return (!!thinker || !!sampler) && !failed; }
+        init, decide,
+        get available() { return !!worker && !failed; }
     };
 })();
 

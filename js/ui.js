@@ -39,18 +39,42 @@ var QUI = (function () {
     const setupOverlay = document.getElementById('setupOverlay');
     const winOverlay = document.getElementById('winOverlay');
     const toastEl = document.getElementById('toast');
+    const winRateBtn = document.getElementById('winRateBtn');
+
+    /* ---------------- win-rate toggle ---------------- */
+    const WR_KEY = 'quoridor.winrate';
+    function readWinRatePref() {
+        try { return localStorage.getItem(WR_KEY) !== '0'; } catch (e) { return true; }
+    }
+    let showWinRate = readWinRatePref();
+    function applyWinRatePref() {
+        winRateBtn.setAttribute('aria-pressed', showWinRate);
+        document.querySelectorAll('.player-card').forEach(c => {
+            c.classList.toggle('winrate-hidden', !showWinRate);
+        });
+    }
+    winRateBtn.addEventListener('click', () => {
+        showWinRate = !showWinRate;
+        try { localStorage.setItem(WR_KEY, showWinRate ? '1' : '0'); } catch (e) { /* ignore */ }
+        applyWinRatePref();
+    });
 
     /* ---------------- status bar ---------------- */
     function setStatus(html) { statusBar.innerHTML = html; }
 
     /* ---------------- player cards ---------------- */
-    function renderPlayers(st) {
+    /**
+     * Render player cards. winRates is an optional array (per player id) of
+     * numbers in [0,1] or null (not computed yet).
+     */
+    function renderPlayers(st, winRates) {
         playersList.innerHTML = '';
         for (const p of st.players) {
             const card = document.createElement('div');
             card.className = 'player-card' +
                 (st.winner === null && st.players[st.turn].id === p.id ? ' turn' : '') +
-                (st.winner === p.id ? ' win' : '');
+                (st.winner === p.id ? ' win' : '') +
+                (showWinRate ? '' : ' winrate-hidden');
             card.style.setProperty('--pc', p.color);
             const typeTag = p.type === 'ai' ? 'AI' : 'Human';
             card.innerHTML =
@@ -63,6 +87,10 @@ var QUI = (function () {
                     '<span>Walls</span>' +
                     '<span class="pc-walls"></span>' +
                     '<span class="pc-dist"><b>—</b> to goal</span>' +
+                '</div>' +
+                '<div class="pc-row3">' +
+                    '<span class="pc-winrate"><span class="pc-winrate-fill"></span></span>' +
+                    '<span class="pc-winrate-txt">—</span>' +
                 '</div>';
             card.querySelector('.pc-name').textContent = p.name;
             card.querySelector('.pc-tag').textContent = typeTag;
@@ -74,6 +102,24 @@ var QUI = (function () {
             }
             const d = QRules.distanceToGoal(st, p.id);
             card.querySelector('.pc-dist b').textContent = isFinite(d) ? d : '∞';
+            // win rate
+            const fill = card.querySelector('.pc-winrate-fill');
+            const txt = card.querySelector('.pc-winrate-txt');
+            const rate = winRates ? winRates[p.id] : null;
+            if (st.winner === p.id) {
+                fill.style.width = '100%';
+                txt.textContent = '100%';
+            } else if (st.winner !== null) {
+                fill.style.width = '0%';
+                txt.textContent = '0%';
+            } else if (rate != null && isFinite(rate)) {
+                const pct = Math.round(rate * 100);
+                fill.style.width = pct + '%';
+                txt.textContent = pct + '%';
+            } else {
+                fill.style.width = '0%';
+                txt.textContent = '—';
+            }
             playersList.appendChild(card);
         }
     }
@@ -128,12 +174,14 @@ var QUI = (function () {
     }
 
     /* ---------------- public ---------------- */
+    applyWinRatePref();
     return {
         themeBtn, statusBar, playersList, historyList,
-        setupOverlay, winOverlay,
+        setupOverlay, winOverlay, winRateBtn,
         setStatus, renderPlayers, renderHistory,
         showSetup, hideSetup, showWin, hideWin,
-        showToast
+        showToast,
+        get showWinRate() { return showWinRate; }
     };
 })();
 

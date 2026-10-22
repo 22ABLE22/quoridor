@@ -10,6 +10,9 @@ zero dependencies, no build step; open `index.html` and play.
 - **4-player matches**: any mix of **Human / AI / Off** per seat
   (off seats are dropped, so 2–4 players in any combination work, e.g. one
   human against three AIs)
+- **Live win probability**: every player card carries a win-rate bar,
+  estimated by Monte-Carlo simulation after each move and toggleable with
+  the **Win Rate** button (preference is remembered)
 - **Three themes**: system (Auto) / Light / Dark, cycled with one button and
   remembered across visits
 - **Complete rules**: 9×9 board, two-cell walls, straight and diagonal jumps,
@@ -22,9 +25,13 @@ zero dependencies, no build step; open `index.html` and play.
 - **Game aids**: live shortest-distance counters, last-move trail,
   undo (rolls back through AI replies to your previous action), full
   move history
-- **Single AI**: shallow alpha-beta search (3 plies for 2 players, 2 plies
-  paranoid for 3+) with relevant-wall pruning — it sees jump tactics and
-  wall counterplay
+- **Strong single AI**: iterative-deepening alpha-beta (up to 9 plies) with a
+  Zobrist-hashed transposition table, time management (~2.4 s budget per
+  move, hard-capped under 3 s), relevant-wall pruning, and paranoid
+  multi-opponent search for 3+ players — it sees jump tactics and wall
+  counterplay. All search runs in a **Web Worker**, so the page stays
+  responsive while the AI thinks; under `file://` (no workers) it falls
+  back to a shorter synchronous search automatically.
 - Touch-friendly (Pointer Events: press to preview, release to act)
 
 ## About the game
@@ -64,12 +71,14 @@ Open the live site: <https://22able22.github.io/quoridor/>
 ```
 index.html        # page skeleton + theme CSS variables (data-theme)
 js/rules.js       # rules engine (pure logic, no DOM; Node-testable)
-js/ai.js          # alpha-beta AI with relevant-wall pruning
+js/ai.js          # iterative-deepening alpha-beta AI + win-rate simulator
+js/ai-worker.js   # Web Worker wrapper (engine sources inlined into a Blob)
 js/render.js      # canvas board rendering (DPI-aware, theme-aware)
 js/input.js       # pointer input (mouse + touch unified)
-js/ui.js          # theme cycling, player cards, history, modals, toast
+js/ui.js          # theme cycling, player cards, win-rate bars, history, modals
 js/app.js         # controller (game lifecycle, AI scheduling, undo)
-tests/rules.test.mjs   # rules + AI regression tests (75 assertions)
+tests/rules.test.mjs          # rules + AI regression tests (82 assertions)
+tests/worker-inline.check.js  # worker command-loop verification (run manually)
 ```
 
 - Classic script tags, no bundler — works from `file://`

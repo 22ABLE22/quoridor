@@ -95,6 +95,11 @@
         .pc-wall.used { background:var(--line); }
         .pc-dist { margin-left:auto; font-variant-numeric:tabular-nums; }
         .pc-dist b { color:var(--text); }
+        .pc-row3 { display:flex; align-items:center; gap:7px; font-size:0.66rem; color:var(--muted); }
+        .pc-winrate { flex:1 1 auto; height:7px; border-radius:4px; background:var(--line-soft); overflow:hidden; }
+        .pc-winrate-fill { height:100%; border-radius:4px; background:var(--pc,#888); width:0%; transition:width .5s ease; }
+        .pc-winrate-txt { flex:0 0 auto; font-variant-numeric:tabular-nums; color:var(--text); font-weight:600; }
+        .player-card.winrate-hidden .pc-row3 { display:none; }
         /* ---------------- history ---------------- */
         .history { max-height:180px; overflow-y:auto; display:flex; flex-direction:column; gap:3px; font-size:0.74rem; font-variant-numeric:tabular-nums; }
         .hist-item { display:flex; gap:7px; padding:3px 8px; background:var(--hist-bg); border:1px solid var(--line-soft); border-radius:6px; color:var(--muted); }
@@ -172,6 +177,12 @@
                 </div>
             </section>
             <section class="side-block">
+                <h2>Options</h2>
+                <div class="controls">
+                    <button id="winRateBtn" type="button" aria-pressed="true">📊 Win Rate</button>
+                </div>
+            </section>
+            <section class="side-block">
                 <h2>History</h2>
                 <div id="historyList" class="history"><div class="hist-empty">No moves yet</div></div>
             </section>
@@ -232,6 +243,7 @@
 
 <script src="js/rules.js"></script>
 <script src="js/ai.js"></script>
+<script src="js/ai-worker.js"></script>
 <script src="js/render.js"></script>
 <script src="js/input.js"></script>
 <script src="js/ui.js"></script>

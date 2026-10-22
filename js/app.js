@@ -17,7 +17,11 @@ var QApp = (function () {
     let hoverCell = null, hoverWall = null;
     let aiTimer = null;
     let aiThinking = false;
+    let winRates = null;          // per-player-id array of [0,1] or null
+    let gameEpoch = 0;            // bumped on every applied action (guards AI replies)
+    let wrEpoch = 0;              // bumped on every win-rate request (guards WR replies)
 
+    const AI_BUDGET_MS = 2400;    // hard search budget (< 3s user tolerance)
     const undoBtn = document.getElementById('undoBtn');
     const newGameBtn = document.getElementById('newGameBtn');
     const board = QRender.board;
@@ -40,11 +44,73 @@ var QApp = (function () {
 
     function refreshUI() {
         if (!st) return;
-        QUI.renderPlayers(st);
+        QUI.renderPlayers(st, QUI.showWinRate ? winRates : null);
         QUI.renderHistory(st);
         updateStatus();
         updateButtons();
         redraw();
+    }
+
+    /** Serialize the game state for the worker (plain data only). */
+    function exportState() {
+        return {
+            mode: st.mode,
+            players: st.players.map(p => ({
+                id: p.id, seatKey: p.seatKey, name: p.name, color: p.color, goal: p.goal,
+                type: p.type, wallQuota: p.wallQuota, walls: p.walls,
+                pos: { x: p.pos.x, y: p.pos.y }
+            })),
+            hw: st.hw.map(r => r.slice()),
+            vw: st.vw.map(r => r.slice()),
+            turn: st.turn, moveNo: st.moveNo,
+            history: [],
+            winner: st.winner
+        };
+    }
+
+    /**
+     * Update win-rate bars. Runs in the worker when available (async, does
+     * not block the UI); falls back to a small synchronous sample otherwise.
+     */
+    function refreshWinRates() {
+        if (!st || st.winner !== null) return;
+        if (!QUI.showWinRate) return;
+        const epoch = ++wrEpoch;
+        const game = gameEpoch;
+        const snapshot = exportState();
+        const runWorker = () => {
+            const jobs = st.players.map(p => AIWorkerHelper.winRate(snapshot, p.id, 120));
+            Promise.all(jobs).then(results => {
+                if (epoch !== wrEpoch || game !== gameEpoch || !st || st.winner !== null) return;   // stale
+                const allNull = results.every(r => !r || typeof r.rate !== 'number');
+                if (allNull) { syncWinRates(snapshot, epoch, game); return; }   // worker idle → sync
+                winRates = st.players.map((p, idx) => {
+                    const r = results[idx];
+                    return r && typeof r.rate === 'number' ? r.rate : null;
+                });
+                QUI.renderPlayers(st, winRates);
+            }).catch(() => {
+                if (epoch === wrEpoch) syncWinRates(snapshot, epoch, game);
+            });
+        };
+        if (AIWorkerHelper.available) {
+            runWorker();
+        } else {
+            AIWorkerHelper.init().then(ok => {
+                if (ok) runWorker();
+                else syncWinRates(snapshot, epoch, game);
+            });
+        }
+    }
+
+    /** Synchronous fallback (fewer rollouts to stay responsive). */
+    function syncWinRates(snapshot, epoch, game) {
+        if (epoch !== wrEpoch || game !== gameEpoch || !st) return;
+        winRates = st.players.map(p => {
+            try { return QAI.simulateWinRate(snapshot, p.id, 40); }
+            catch (e) { return null; }
+        });
+        QUI.renderPlayers(st, winRates);
     }
 
     function updateStatus() {
@@ -124,12 +190,15 @@ var QApp = (function () {
     /* ---------------- post-action ---------------- */
     function afterAction() {
         hoverCell = hoverWall = null;
+        gameEpoch++;
+        winRates = null;
         refreshUI();
         if (st.winner !== null) {
             setTimeout(() => QUI.showWin(st), 600);
             return;
         }
         scheduleAI();
+        refreshWinRates();
     }
 
     /* ---------------- AI scheduling ---------------- */
@@ -140,17 +209,37 @@ var QApp = (function () {
         aiThinking = true;
         updateStatus();
         updateButtons();
+        const pi = st.turn;
+        const epoch = gameEpoch;   // bumped by every applied action
         aiTimer = setTimeout(() => {
-            const pi = st.turn;
-            const action = QAI.decide(st, pi);
-            aiThinking = false;
-            if (!action) { refreshUI(); return; }
-            if (action.type === 'move') {
-                QRules.applyMove(st, pi, action.target);
-            } else {
-                QRules.applyWall(st, pi, action.wall.x, action.wall.y, action.wall.isH);
-            }
-            afterAction();
+            const snapshot = exportState();
+            const applyAction = (action) => {
+                aiThinking = false;
+                if (epoch !== gameEpoch || !st || st.winner !== null) { refreshUI(); return; }
+                if (!action) { refreshUI(); return; }
+                if (action.type === 'move') {
+                    QRules.applyMove(st, pi, action.target);
+                } else {
+                    QRules.applyWall(st, pi, action.wall.x, action.wall.y, action.wall.isH);
+                }
+                afterAction();
+            };
+            // Prefer the worker (deep search off the main thread); fall back
+            // to a synchronous search when workers are unavailable (file://).
+            const think = (viaWorker) => {
+                if (viaWorker) {
+                    AIWorkerHelper.decide(snapshot, pi, AI_BUDGET_MS)
+                        .then(res => {
+                            if (res && res.action) applyAction(res.action);
+                            else applyAction(QAI.decide(snapshot, pi, 400));
+                        })
+                        .catch(() => applyAction(QAI.decide(snapshot, pi, 400)));
+                } else {
+                    applyAction(QAI.decide(snapshot, pi, 400));
+                }
+            };
+            if (AIWorkerHelper.available) think(true);
+            else AIWorkerHelper.init().then(ok => think(ok));
         }, 420);
     }
 
@@ -167,8 +256,11 @@ var QApp = (function () {
         } while (st.history.length > 0 && st.players[st.turn].type !== 'human' && n < 12);
         QUI.hideWin();
         QUI.showToast('Undid ' + n + ' move' + (n > 1 ? 's' : ''));
+        gameEpoch++;
+        winRates = null;
         refreshUI();
         scheduleAI();
+        refreshWinRates();
     });
 
     /* ---------------- setup modal ---------------- */
@@ -239,8 +331,11 @@ var QApp = (function () {
         QUI.hideSetup();
         QUI.hideWin();
         hoverCell = hoverWall = null;
+        gameEpoch++;
+        winRates = null;
         refreshUI();
         scheduleAI();
+        refreshWinRates();
     });
 
     rematchBtn.addEventListener('click', () => {
@@ -248,8 +343,11 @@ var QApp = (function () {
         st = QRules.createGame(st.mode, seats);
         QUI.hideWin();
         hoverCell = hoverWall = null;
+        gameEpoch++;
+        winRates = null;
         refreshUI();
         scheduleAI();
+        refreshWinRates();
     });
 
     reconfigBtn.addEventListener('click', () => {
@@ -340,6 +438,7 @@ var QApp = (function () {
                 ]);
                 refreshUI();
                 scheduleAI();
+                refreshWinRates();
             }
         } catch (e) { /* ignore */ }
     }

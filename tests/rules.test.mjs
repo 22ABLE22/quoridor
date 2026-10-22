@@ -220,14 +220,18 @@ function ok(cond, msg) {
     ok(/^wall [A-I][1-9][hv]$/.test(QRules.moveDesc({ type: 'wall', pi: 0, x: 3, y: 5, isH: true })), 'wall notation is ASCII');
 }
 
-// ================= AI vs AI: 2-player =================
+// ================= AI vs AI: 2-player (time-budgeted search) =================
 {
     const g = QRules.createGame(2, [{ type: 'ai' }, { type: 'ai' }]);
     let steps = 0;
     let invariantOk = true;
+    const t0 = Date.now();
+    let maxStepMs = 0;
     while (g.winner === null && steps < 300) {
         const pi = g.turn;
-        const act = QAI.decide(g, pi);
+        const s0 = Date.now();
+        const act = QAI.decide(g, pi, 600);   // small budget for the test suite
+        maxStepMs = Math.max(maxStepMs, Date.now() - s0);
         if (!act) break;
         if (act.type === 'move') QRules.applyMove(g, pi, act.target);
         else QRules.applyWall(g, pi, act.wall.x, act.wall.y, act.wall.isH);
@@ -236,13 +240,35 @@ function ok(cond, msg) {
     }
     ok(invariantOk, 'AI keeps everyone reachable');
     ok(g.winner !== null, 'AI vs AI game finishes (no deadlock)');
+    ok(maxStepMs < 3000, 'AI respects the time budget (max step ' + maxStepMs + 'ms)');
     const wallsPlaced = g.history.filter(r => r.type === 'wall').length;
     ok(wallsPlaced <= 20, 'wall budget respected');
     // both orientations must appear across a full AI game (regression for the
-    // "only horizontal walls" geometry bug — the AI now finds vertical walls too)
+    // "only horizontal walls" geometry bug)
     const hasH = g.history.some(r => r.type === 'wall' && r.isH);
     const hasV = g.history.some(r => r.type === 'wall' && !r.isH);
     ok(hasH && hasV, 'AI places both horizontal and vertical walls');
+}
+
+// ================= AI: state must be untouched by the search =================
+{
+    const g = QRules.createGame(2, [{ type: 'ai' }, { type: 'ai' }]);
+    QRules.applyMove(g, 0, { x: 4, y: 7 });
+    QRules.applyMove(g, 1, { x: 4, y: 1 });
+    QRules.applyWall(g, 0, 4, 6, true);
+    QRules.applyWall(g, 1, 4, 2, true);
+    const before = JSON.stringify({
+        pos: g.players.map(p => p.pos),
+        walls: g.players.map(p => p.walls),
+        hw: g.hw, vw: g.vw, turn: g.turn, winner: g.winner
+    });
+    QAI.decide(g, 1, 300);
+    const after = JSON.stringify({
+        pos: g.players.map(p => p.pos),
+        walls: g.players.map(p => p.walls),
+        hw: g.hw, vw: g.vw, turn: g.turn, winner: g.winner
+    });
+    ok(before === after, 'decide() must not mutate the game state');
 }
 
 // ================= AI vs AI: 4-player =================
@@ -253,7 +279,7 @@ function ok(cond, msg) {
     let steps = 0;
     while (g.winner === null && steps < 600) {
         const pi = g.turn;
-        const act = QAI.decide(g, pi);
+        const act = QAI.decide(g, pi, 250);
         if (!act) break;
         if (act.type === 'move') QRules.applyMove(g, pi, act.target);
         else QRules.applyWall(g, pi, act.wall.x, act.wall.y, act.wall.isH);
@@ -261,6 +287,27 @@ function ok(cond, msg) {
     }
     ok(g.winner !== null, '4-player AI game finishes (no deadlock)');
     ok(g.history.length < 600, 'reasonable move count');
+}
+
+// ================= win-rate simulation =================
+{
+    const g = QRules.createGame(2, [{ type: 'ai' }, { type: 'ai' }]);
+    // symmetrical start: both far from goal, second player benefits from the
+    // jump rule, so rates must be roughly balanced (not 0/100)
+    const r0 = QAI.simulateWinRate(g, 0, 120);
+    const r1 = QAI.simulateWinRate(g, 1, 120);
+    ok(r0 >= 0 && r0 <= 1 && r1 >= 0 && r1 <= 1, 'win rates are probabilities');
+    ok(r0 > 0.15 && r0 < 0.85, 'symmetric start is not a landslide (' + r0.toFixed(2) + ')');
+    // one step from victory → near-1
+    g.players[0].pos = { x: 4, y: 1 };
+    g.turn = 0;
+    const rWin = QAI.simulateWinRate(g, 0, 120);
+    ok(rWin > 0.9, 'one step from goal ≈ certain win (' + rWin.toFixed(2) + ')');
+    // decided game
+    g.players[0].pos = { x: 4, y: 0 };
+    g.winner = 0;
+    ok(QAI.simulateWinRate(g, 0, 10) === 1, 'winner has win rate 1');
+    ok(QAI.simulateWinRate(g, 1, 10) === 0, 'loser has win rate 0');
 }
 
 // ================= legalWalls completeness =================

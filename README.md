@@ -22,6 +22,9 @@ zero dependencies, no build step; open `index.html` and play.
   place a wall. The wall orientation follows the groove: hover along a row
   groove for a horizontal wall, along a column groove for a vertical wall.
   Legal move targets always glow; an illegal wall preview turns red.
+- **Color-coded walls**: every wall is painted in the color of the player
+  who placed it, so you can read each side's blocking strategy at a glance
+  (and study how the AI defends).
 - **Game aids**: live shortest-distance counters, last-move trail,
   undo (rolls back through AI replies to your previous action), full
   move history

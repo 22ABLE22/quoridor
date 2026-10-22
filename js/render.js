@@ -146,16 +146,19 @@ var QRender = (function () {
             ctx.stroke();
         }
 
-        // Placed walls
+        // Placed walls — colored by the player who placed them
         for (let y = 0; y < QRules.ANCH; y++) {
             for (let x = 0; x < QRules.ANCH; x++) {
-                if (st.hw[y][x]) drawWall(x, y, true, 1);
-                if (st.vw[y][x]) drawWall(x, y, false, 1);
+                if (st.hw[y][x] > 0) drawWall(x, y, true, 1, ownerColor(st, x, y, true));
+                if (st.vw[y][x] > 0) drawWall(x, y, false, 1, ownerColor(st, x, y, false));
             }
         }
 
-        // Last wall emphasis
-        if (opts.lastWall) drawWall(opts.lastWall.x, opts.lastWall.y, opts.lastWall.isH, 1.06);
+        // Last wall emphasis (slightly stronger owner color)
+        if (opts.lastWall) {
+            const ow = ownerColor(st, opts.lastWall.x, opts.lastWall.y, opts.lastWall.isH);
+            drawWall(opts.lastWall.x, opts.lastWall.y, opts.lastWall.isH, 1.06, ow);
+        }
 
         // Legal move highlights (always shown for the human on turn)
         for (const c of (opts.legalCells || [])) {
@@ -179,10 +182,12 @@ var QRender = (function () {
             ctx.fill();
         }
 
-        // Hover wall preview (green if legal, red if not)
+        // Hover wall preview — shown in the current player's color
+        // (semi-transparent when legal, red-crossed when not)
         if (opts.hoverWall) {
+            const pc = st.players[st.turn] ? st.players[st.turn].color : theme.wall;
             drawWall(opts.hoverWall.x, opts.hoverWall.y, opts.hoverWall.isH,
-                opts.hoverWall.legal === false ? 0 : (opts.hoverWall.legal ? 1 : 0));
+                opts.hoverWall.legal === false ? 0 : (opts.hoverWall.legal ? 1 : 0), pc);
             if (opts.hoverWall.legal === false) {
                 drawWallDenied(opts.hoverWall);
             }
@@ -235,23 +240,27 @@ var QRender = (function () {
      *   h-wall → wide × thin (long axis horizontal, lying in a row groove)
      *   v-wall → thin × tall (long axis vertical, lying in a column groove)
      */
-    function drawWall(x, y, isH, alpha) {
+    function drawWall(x, y, isH, alpha, ownerColorHex) {
         const L = CELL * 2 + GROOVE;             // wall length (along the groove span)
         const T = Math.max(8, GROOVE * 0.95);    // wall thickness
         const { cx, cy } = wallCenter(x, y, isH);
         const w = isH ? L : T;
         const h = isH ? T : L;
+        // Walls painted in the placing player's color (darkened for
+        // contrast against the cells); fall back to the wooden default.
+        const body = ownerColorHex ? darken(ownerColorHex, 0.18) : theme.wall;
+        const edge = ownerColorHex ? darken(ownerColorHex, 0.45) : theme.wallEdge;
         ctx.save();
         ctx.globalAlpha = alpha === 1 ? 1 : alpha === 0 ? 0.5 : Math.min(1, alpha);
         // drop shadow
-        ctx.fillStyle = withAlpha(theme.wallEdge, 0.55);
+        ctx.fillStyle = withAlpha(edge, 0.55);
         roundRect(cx - w / 2 + 1.5, cy - h / 2 + 1.5, w, h, 4);
         ctx.fill();
         // body
-        ctx.fillStyle = theme.wall;
+        ctx.fillStyle = body;
         roundRect(cx - w / 2, cy - h / 2, w, h, 4);
         ctx.fill();
-        ctx.strokeStyle = theme.wallEdge;
+        ctx.strokeStyle = edge;
         ctx.lineWidth = 1.2;
         roundRect(cx - w / 2, cy - h / 2, w, h, 4);
         ctx.stroke();
@@ -337,11 +346,25 @@ var QRender = (function () {
         return hex;
     }
 
+    /** Player color of the wall's owner at anchor (x,y); null if none. */
+    function ownerColor(st, x, y, isH) {
+        const owner = QRules.wallOwner(st, x, y, isH);
+        return owner >= 0 && st.players[owner] ? st.players[owner].color : null;
+    }
+
     function lighten(hex, k) {
         let h = hex.replace('#', '');
         if (h.length === 3) h = h.split('').map(c => c + c).join('');
         const r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16);
         const f = v => Math.round(v + (255 - v) * k);
+        return `rgb(${f(r)},${f(g)},${f(b)})`;
+    }
+
+    function darken(hex, k) {
+        let h = hex.replace('#', '');
+        if (h.length === 3) h = h.split('').map(c => c + c).join('');
+        const r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16);
+        const f = v => Math.round(v * (1 - k));
         return `rgb(${f(r)},${f(g)},${f(b)})`;
     }
 

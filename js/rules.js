@@ -10,6 +10,8 @@
  * 挡板锚点：8×8 内部格点，锚 (x,y) ∈ [0,7]²，
  *   h 墙 (x,y)：位于行间隙 y（行 y 与 y+1 之间），覆盖列 x 与 x+1，中心格点 (x+1,y+1)
  *   v 墙 (x,y)：位于列间隙 x（列 x 与 x+1 之间），覆盖行 y 与 y+1，中心格点 (x+1,y+1)
+ * 墙的存储值：hw[y][x] / vw[y][x] ∈ {0=无墙, 1..players.length=放置者下标+1}。
+ *   存归属是为了渲染时按放置者颜色着色；所有判定统一用 >0。
  * 冲突规则：
  *   平行重叠：h(x,y) 与 h(x±1,y) / v(x,y) 与 v(x,y±1) 共享通路 → 非法
  *   十字交叉：h(x,y) 与 v(x,y) 共享中心格点（"＋"形）→ 非法
@@ -99,23 +101,23 @@ var QRules = (function () {
         const dx = to.x - from.x, dy = to.y - from.y;
         if (dx === 0 && dy === -1) {          // 上：行间隙 y-1，覆盖列边界 x 的 h 墙锚 x 或 x-1
             const gy = from.y - 1;
-            return (from.x < ANCH && st.hw[gy][from.x] === 1) ||
-                   (from.x > 0 && st.hw[gy][from.x - 1] === 1);
+            return (from.x < ANCH && st.hw[gy][from.x] > 0) ||
+                   (from.x > 0 && st.hw[gy][from.x - 1] > 0);
         }
         if (dx === 0 && dy === 1) {           // 下：行间隙 y，锚 x 或 x-1
             const gy = from.y;
-            return (from.x < ANCH && st.hw[gy][from.x] === 1) ||
-                   (from.x > 0 && st.hw[gy][from.x - 1] === 1);
+            return (from.x < ANCH && st.hw[gy][from.x] > 0) ||
+                   (from.x > 0 && st.hw[gy][from.x - 1] > 0);
         }
         if (dx === -1 && dy === 0) {          // 左：列间隙 x-1，锚 y 或 y-1
             const gx = from.x - 1;
-            return (from.y < ANCH && st.vw[from.y][gx] === 1) ||
-                   (from.y > 0 && st.vw[from.y - 1][gx] === 1);
+            return (from.y < ANCH && st.vw[from.y][gx] > 0) ||
+                   (from.y > 0 && st.vw[from.y - 1][gx] > 0);
         }
         if (dx === 1 && dy === 0) {           // 右：列间隙 x，锚 y 或 y-1
             const gx = from.x;
-            return (from.y < ANCH && st.vw[from.y][gx] === 1) ||
-                   (from.y > 0 && st.vw[from.y - 1][gx] === 1);
+            return (from.y < ANCH && st.vw[from.y][gx] > 0) ||
+                   (from.y > 0 && st.vw[from.y - 1][gx] > 0);
         }
         throw new Error('wallBetween: cells must be orthogonally adjacent');
     }
@@ -127,15 +129,15 @@ var QRules = (function () {
     function wallConflicts(st, x, y, isH) {
         if (!inAnchor(x, y)) return true;
         if (isH) {
-            if (st.hw[y][x] === 1) return true;                    // 原位已占用
-            if (x > 0 && st.hw[y][x - 1] === 1) return true;       // 左侧重叠
-            if (x < ANCH - 1 && st.hw[y][x + 1] === 1) return true;// 右侧重叠
-            if (st.vw[y][x] === 1) return true;                    // 同锚十字交叉
+            if (st.hw[y][x] > 0) return true;                    // 原位已占用
+            if (x > 0 && st.hw[y][x - 1] > 0) return true;       // 左侧重叠
+            if (x < ANCH - 1 && st.hw[y][x + 1] > 0) return true;// 右侧重叠
+            if (st.vw[y][x] > 0) return true;                    // 同锚十字交叉
         } else {
-            if (st.vw[y][x] === 1) return true;
-            if (y > 0 && st.vw[y - 1][x] === 1) return true;       // 上侧重叠
-            if (y < ANCH - 1 && st.vw[y + 1][x] === 1) return true;// 下侧重叠
-            if (st.hw[y][x] === 1) return true;                    // 同锚十字交叉
+            if (st.vw[y][x] > 0) return true;
+            if (y > 0 && st.vw[y - 1][x] > 0) return true;       // 上侧重叠
+            if (y < ANCH - 1 && st.vw[y + 1][x] > 0) return true;// 下侧重叠
+            if (st.hw[y][x] > 0) return true;                    // 同锚十字交叉
         }
         return false;
     }
@@ -251,7 +253,7 @@ var QRules = (function () {
         if (st.winner !== null) return false;
         if (st.players[pi].walls <= 0) return false;
         if (wallConflicts(st, x, y, isH)) return false;
-        // 试放后所有玩家仍可达
+        // 试放后所有玩家仍可达（临时值 1，仅作占位）
         if (isH) st.hw[y][x] = 1; else st.vw[y][x] = 1;
         const ok = allReachable(st);
         if (isH) st.hw[y][x] = 0; else st.vw[y][x] = 0;
@@ -279,6 +281,15 @@ var QRules = (function () {
         return out;
     }
 
+    /**
+     * 读取锚点 (x,y) 处墙的放置者（players 下标）。
+     * 无墙返回 -1；返回值可直接用于渲染着色。
+     */
+    function wallOwner(st, x, y, isH) {
+        const v = isH ? st.hw[y][x] : st.vw[y][x];
+        return v > 0 ? v - 1 : -1;
+    }
+
     /* ------------------------------------------------------------------ */
     /* 执行动作 / 悔棋                                                     */
     /* ------------------------------------------------------------------ */
@@ -304,12 +315,12 @@ var QRules = (function () {
         return rec;
     }
 
-    /** 放墙（必须通过 canPlaceWall） */
+    /** 放墙（必须通过 canPlaceWall）。存储值为 pi+1（放置者归属，用于渲染着色） */
     function applyWall(st, pi, x, y, isH) {
         if (st.winner !== null) throw new Error('game over');
         if (pi !== st.turn) throw new Error('not your turn');
         if (!canPlaceWall(st, pi, x, y, isH)) throw new Error('illegal wall');
-        if (isH) st.hw[y][x] = 1; else st.vw[y][x] = 1;
+        if (isH) st.hw[y][x] = pi + 1; else st.vw[y][x] = pi + 1;
         st.players[pi].walls--;
         const rec = { type: 'wall', pi, x, y, isH: !!isH };
         st.history.push(rec);
@@ -356,7 +367,7 @@ var QRules = (function () {
         N, ANCH, SEAT_DEFS, DIRS,
         createGame,
         inBoard, inAnchor,
-        wallBetween, wallConflicts,
+        wallBetween, wallConflicts, wallOwner,
         distanceToGoal, allReachable, atGoal,
         legalMoves, canPlaceWall, legalWalls,
         applyMove, applyWall, undoLast,

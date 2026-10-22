@@ -79,6 +79,14 @@ function ok(cond, msg) {
     ok(QRules.canPlaceWall(g, 0, 0, 0, true), 'h-wall (0,0) is placeable');
     QRules.applyWall(g, 0, 0, 0, true);
     ok(g.players[0].walls === 9, 'wall stock decrements');
+    ok(QRules.wallOwner(g, 0, 0, true) === 0, 'wall owner recorded as player 0');
+    ok(QRules.wallOwner(g, 0, 0, false) === -1, 'no v-wall at the same anchor');
+    QRules.applyWall(g, 1, 2, 0, false);
+    ok(QRules.wallOwner(g, 2, 0, false) === 1, 'wall owner recorded as player 1');
+    ok(QRules.wallOwner(g, 0, 0, true) === 0, 'owner survives other placements');
+    QRules.undoLast(g);
+    ok(QRules.wallOwner(g, 2, 0, false) === -1, 'undo clears the ownership');
+    ok(QRules.wallOwner(g, 0, 0, true) === 0, 'other walls keep their owner');
     ok(!QRules.canPlaceWall(g, 1, 0, 0, true), 'same slot twice is illegal');
     ok(!QRules.canPlaceWall(g, 1, 1, 0, true), 'adjacent parallel overlap is illegal (h1,0 vs h0,0)');
     ok(!QRules.canPlaceWall(g, 1, 0, 0, false), 'cross at the same anchor is illegal (v0,0 vs h0,0)');

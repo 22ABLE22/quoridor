@@ -1,76 +1,99 @@
-# 步步为营 · Quoridor
+# Quoridor
 
-开源网页版「步步为营」（Quoridor / 挡板棋）：把棋子率先走到对面底边即胜。
-纯前端实现，零依赖、无构建，双击 `index.html` 即可玩。
+An open-source web version of Quoridor, the wall-placement race game: be the
+first to bring your pawn to the opposite edge of the board. Pure front end —
+zero dependencies, no build step; open `index.html` and play.
 
-## 功能
+## Features
 
-- **双人对战**：PVP（真人 vs 真人）与 PVE（真人 vs 电脑）
-- **四人对战**：PVP 与 PVE 混合——任意座位可选 **真人 / 电脑（三档 AI 难度）/ 空**
-  （空座位自动剔除，支持 2~4 人任意组合，例如 1 人 vs 3 台电脑）
-- **三档主题**：系统跟随（Auto）/ 白天（Light）/ 黑夜（Dark），循环切换并记忆偏好
-- **完整规则**：9×9 棋盘、两格挡板、直跳 / 斜跳、四人局禁连跳两子、
-  挡板防重叠 / 防十字交叉、防把任何玩家围死（BFS 可达性校验）
-- **对局辅助**：实时最短距离显示、走子 / 放墙合法落点提示、
-  最后一手高亮、悔棋（自动回退到真人行动前）、完整历史记录
-- **三档 AI**：入门（纯竞速）/ 进阶（攻防启发式放墙）/ 大师（浅层极小极大搜索，
-  能预见跳跃战术与挡板反制）
-- 移动端可玩（Pointer Events，触摸按住预览、抬起落子）
+- **2-player matches**: PVP (human vs human) and PVE (human vs AI)
+- **4-player matches**: any mix of **Human / AI / Off** per seat
+  (off seats are dropped, so 2–4 players in any combination work, e.g. one
+  human against three AIs)
+- **Three themes**: system (Auto) / Light / Dark, cycled with one button and
+  remembered across visits
+- **Complete rules**: 9×9 board, two-cell walls, straight and diagonal jumps,
+  no double jumps in the 4-player game, walls may not overlap or cross,
+  and no wall may seal any player off from their goal (BFS reachability check)
+- **Unified input**: no mode toggle — click a cell to move, click a groove to
+  place a wall. The wall orientation follows the groove: hover along a row
+  groove for a horizontal wall, along a column groove for a vertical wall.
+  Legal move targets always glow; an illegal wall preview turns red.
+- **Game aids**: live shortest-distance counters, last-move trail,
+  undo (rolls back through AI replies to your previous action), full
+  move history
+- **Single AI**: shallow alpha-beta search (3 plies for 2 players, 2 plies
+  paranoid for 3+) with relevant-wall pruning — it sees jump tactics and
+  wall counterplay
+- Touch-friendly (Pointer Events: press to preview, release to act)
 
-## 关于游戏
+## About the game
 
-「步步为营」是 Mirko Marchesi 设计、Gigamic 发行的抽象策略棋（Quoridor，1997），
-在国内亦以 **Zaborr**、微信小程序 **「步步为营对战棋」** 等形式流传。本仓库为
-个人学习用途的第三方网页复刻，与上述游戏及其发行商没有任何关联，未获授权或赞助；
-游戏名称与商标归各自权利人所有。
+Quoridor was designed by Mirko Marchesi and is published by Gigamic (1997).
+This repository is a third-party reimplementation for personal study and
+play; it is not affiliated with, endorsed by, or sponsored by the publisher.
+Game names and trademarks belong to their respective owners.
 
-## 网页版
+## Play
 
-访问 <https://22able22.github.io/quoridor/>（或本地直接用浏览器打开 `index.html`）。
+Open the live site: <https://22able22.github.io/quoridor/>
+(or open `index.html` directly from `file://`).
 
-- 顶部按钮切换 系统 / 白天 / 黑夜 主题
-- 「新开一局」选择人数与座位配置；放墙时把鼠标移到格线交点附近，
-  横向偏移预览水平墙、纵向偏移预览垂直墙，双击同一交点切换横竖
-- 悔棋会连 AI 的应手一起撤销，回到你上次行动之前
+- Use the header button to cycle Auto / Light / Dark themes
+- **New Game** sets the player count and seats
+- Click a cell to move; hover a groove to preview a wall and click to place it
+- **Undo** rewinds AI replies together with your own last action
 
-## 规则速览
+## Rules at a glance
 
-1. 轮到你时二选一：棋子上下左右走一格，或放置一块挡板（用完为止）
-2. 挡板长两格、放在格间凹槽；不能与已有挡板重叠或十字交叉（端点相接、T 形合法）
-3. 任何挡板放置后，所有玩家必须仍有路可走到各自目标边（不许围死任何人，包括自己）
-4. 与对手正对面相邻时可直跳过它；直跳位被墙 / 边界 / 第三棋子挡住时可斜跳到其两侧
-5. 四人局禁止一次连跳两子
-6. 双人局每人 10 块挡板，四人局每人 5 块；先到对面底边者胜
+1. On your turn, either move your pawn one square (orthogonally) or place a
+   wall (until you run out)
+2. A wall spans two squares and sits in a groove; it must not overlap or
+   cross an existing wall (touching end-to-end or in a T is fine)
+3. After any wall placement, every player must still have a path to their
+   goal edge (sealing anyone — including yourself — is illegal)
+4. When orthogonally adjacent to an opponent, jump straight over it; if the
+   landing square is blocked by a wall, the board edge, or a third pawn,
+   jump diagonally to either side instead
+5. In the 4-player game, jumping over two pawns at once is forbidden
+6. 2-player: 10 walls each · 4-player: 5 walls each; first to reach the
+   opposite edge wins
 
-## 实现说明
+## Implementation
 
 ```
-index.html        # 页面骨架 + 三档主题 CSS 变量体系（data-theme）
-js/rules.js       # 规则引擎（纯逻辑无 DOM，Node 可直接测试）
-js/ai.js          # 三档 AI（竞速 / 启发式 / alpha-beta 浅层搜索）
-js/render.js      # Canvas 棋盘渲染（高分屏自适应、主题感知）
-js/input.js       # Pointer Events 输入（鼠标 + 触摸统一处理）
-js/ui.js          # 主题切换、玩家卡片、历史、弹层、toast
-js/app.js         # 主控制器（对局生命周期、AI 调度、悔棋）
-tests/rules.test.mjs   # 规则引擎 + AI 回归测试（80 项断言，node 直接运行）
+index.html        # page skeleton + theme CSS variables (data-theme)
+js/rules.js       # rules engine (pure logic, no DOM; Node-testable)
+js/ai.js          # alpha-beta AI with relevant-wall pruning
+js/render.js      # canvas board rendering (DPI-aware, theme-aware)
+js/input.js       # pointer input (mouse + touch unified)
+js/ui.js          # theme cycling, player cards, history, modals, toast
+js/app.js         # controller (game lifecycle, AI scheduling, undo)
+tests/rules.test.mjs   # rules + AI regression tests (75 assertions)
 ```
 
-- 全部代码为单文件模块化的经典 script（无 ES Module、无打包），`file://` 直开可用
-- 规则引擎与 AI 不依赖 DOM：测试用 Node `vm` 加载源码逐项断言，
-  覆盖跳跃（直跳 / 斜跳 / 禁连跳）、挡板冲突（重叠 / 十字交叉 / T 形）、
-  可达性防围死、悔棋一致性、AI 梯度（入门 < 进阶 < 大师）与四人局稳定性
-- AI 大师档为 3 层 alpha-beta（双人）/ 2 层 paranoid（三人以上），
-  候选动作经“相关墙”剪枝（棋子周边、已有墙邻接、最短路走廊），单步毫秒级
+- Classic script tags, no bundler — works from `file://`
+- The rules engine and AI are DOM-free: tests load them in a Node `vm` and
+  assert jumps (straight / diagonal / no double jump), wall conflicts
+  (overlap / crossing / T-touch), reachability (no sealing), undo
+  consistency, and that the AI places both wall orientations
+- Wall geometry: an h-wall at anchor (x,y) lies in the row groove between
+  rows y and y+1 spanning columns x and x+1; a v-wall lies in the column
+  groove between columns x and x+1 spanning rows y and y+1. Hit-testing
+  picks the nearest wall center line, which is what makes both orientations
+  naturally reachable with a single click.
 
-## 测试
+## Tests
 
 ```text
 node tests/rules.test.mjs
 ```
 
-浏览器冒烟：打开 `index.html?autotest=1` 会跳过弹层直接开一局 AI 对 AI。
+Browser smoke test: open `index.html?autotest=1` — it skips the setup modal
+and starts an AI vs AI game.
 
-## 许可证
+## License
 
-源代码（HTML/CSS/JS 与测试）采用 [MIT License](LICENSE)。
-「步步为营 / Quoridor」游戏规则与名称归其设计者与发行商所有，本仓库仅为规则复刻实现。
+The source code (HTML/CSS/JS and tests) is released under the
+[MIT License](LICENSE). Quoridor's rules and name belong to their designer
+and publisher; this repository is a reimplementation of the rules only.

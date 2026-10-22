@@ -1,55 +1,52 @@
 <!DOCTYPE html>
-<html lang="zh-CN" data-theme="auto">
+<html lang="en" data-theme="auto">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>步步为营 Quoridor — 挡板棋 · 双人 / 四人 · PVP / PVE</title>
-    <meta name="description" content="开源网页版步步为营（Quoridor）：双人 / 四人对战，真人 / 电脑任意组合，系统·白天·黑夜三档主题，纯前端无依赖。">
+    <title>Quoridor — Wall Placement Game · 2 & 4 Players · PVP / PVE</title>
+    <meta name="description" content="Open-source web Quoridor: 2- or 4-player matches, any mix of human and AI seats, system/light/dark themes, zero dependencies.">
     <style>
         :root {
-            --bg:#f4f6f9; --card:#ffffff; --line:#e4e8ef; --line-soft:#eef1f6;
-            --text:#1f2937; --muted:#6b7280; --brand:#4f46e5; --green:#10b981; --red:#dc2626;
-            --h1:#111827; --label:#4b5563; --hint:#b3bdcc; --footer:#9aa5b4;
-            --btn-bg:#ffffff; --btn-border:#d5dbe4; --btn-text:#374151;
-            --btn-hover-bg:#f6f8fb; --btn-hover-border:#c2cad7;
-            --btn-off-bg:#f9fafb;
-            --btn-on-bg:#f5f3ff; --btn-on-border:#c4b5fd; --btn-on-text:#4c1d95;
-            --input-bg:#ffffff; --input-border:#d5dbe4;
-            --board-bg:#e7d3ac; --board-edge:#c9b184; --cell:#f8efdc; --cell-line:#dcc79c;
-            --wall:#7a5230; --wall-edge:#5c3c20;
-            --goal-dim:0.55; --piece-ring:#ffffff;
-            --hist-bg:#f8fafc; --overlay:rgba(17,24,39,0.45);
-            --shadow:0 1px 2px rgba(16,24,40,0.05);
+            --bg:#f2f0ec; --card:#ffffff; --line:#e2ded6; --line-soft:#edeae3;
+            --text:#33302a; --muted:#8a857a; --brand:#b0622d; --green:#3d9970;
+            --h1:#241f18; --label:#5d5749; --hint:#b5afa2; --footer:#9d977f;
+            --btn-bg:#ffffff; --btn-border:#d8d2c6; --btn-text:#4a4438;
+            --btn-hover-bg:#faf8f4; --btn-hover-border:#c4bcae;
+            --btn-on-bg:#f7efe6; --btn-on-border:#d9b48f; --btn-on-text:#7a4a1d;
+            --input-bg:#ffffff; --input-border:#d8d2c6;
+            --board-bg:#3a3428; --board-edge:#241f16; --cell:#efe6d3; --cell-line:#dbd0b8;
+            --groove:#c9bda0; --wall:#7a4a26; --wall-edge:#4a2c14;
+            --goal-dim:0.7; --piece-ring:#fffdf8;
+            --hist-bg:#f8f5ef; --overlay:rgba(28,23,15,0.5);
+            --shadow:0 1px 3px rgba(60,50,30,0.08);
         }
         :root[data-theme="dark"] {
-            --bg:#0e1118; --card:#161b26; --line:#262d3d; --line-soft:#1f2634;
-            --text:#e6eaf2; --muted:#9aa4b8; --brand:#8b83f7; --green:#34d399; --red:#f87171;
-            --h1:#f1f4fa; --label:#9aa4b8; --hint:#6b7590; --footer:#7b869c;
-            --btn-bg:#1e2432; --btn-border:#2e3648; --btn-text:#cfd6e4;
-            --btn-hover-bg:#242b3c; --btn-hover-border:#3a4358;
-            --btn-off-bg:#1a1f2b;
-            --btn-on-bg:#2a2640; --btn-on-border:#4c3f8a; --btn-on-text:#c4b5fd;
-            --input-bg:#1a1f2b; --input-border:#2e3648;
-            --board-bg:#1d2433; --board-edge:#39415a; --cell:#293349; --cell-line:#37425e;
-            --wall:#9db2d8; --wall-edge:#6d83ad;
-            --goal-dim:0.65; --piece-ring:#0b0e14;
-            --hist-bg:#1b2130; --overlay:rgba(5,8,14,0.62);
-            --shadow:0 1px 2px rgba(0,0,0,0.35);
+            --bg:#14161a; --card:#1d2026; --line:#2c3038; --line-soft:#242830;
+            --text:#e2e0da; --muted:#8f948e; --brand:#d2965f; --green:#4dbd8a;
+            --h1:#f2efe8; --label:#a9a396; --hint:#5d5a50; --footer:#7d7a6e;
+            --btn-bg:#242830; --btn-border:#383d47; --btn-text:#cfd3ca;
+            --btn-hover-bg:#2a2f38; --btn-hover-border:#484e5a;
+            --btn-on-bg:#3a2d20; --btn-on-border:#8a6136; --btn-on-text:#e0b789;
+            --input-bg:#1a1e24; --input-border:#383d47;
+            --board-bg:#101318; --board-edge:#272c35; --cell:#2a313c; --cell-line:#3a4250;
+            --groove:#1c222b; --wall:#d8ab72; --wall-edge:#8a6136;
+            --goal-dim:0.75; --piece-ring:#0d0f13;
+            --hist-bg:#22262e; --overlay:rgba(4,6,10,0.66);
+            --shadow:0 1px 3px rgba(0,0,0,0.4);
         }
         @media (prefers-color-scheme: dark) { :root[data-theme="auto"] {
-            --bg:#0e1118; --card:#161b26; --line:#262d3d; --line-soft:#1f2634;
-            --text:#e6eaf2; --muted:#9aa4b8; --brand:#8b83f7; --green:#34d399; --red:#f87171;
-            --h1:#f1f4fa; --label:#9aa4b8; --hint:#6b7590; --footer:#7b869c;
-            --btn-bg:#1e2432; --btn-border:#2e3648; --btn-text:#cfd6e4;
-            --btn-hover-bg:#242b3c; --btn-hover-border:#3a4358;
-            --btn-off-bg:#1a1f2b;
-            --btn-on-bg:#2a2640; --btn-on-border:#4c3f8a; --btn-on-text:#c4b5fd;
-            --input-bg:#1a1f2b; --input-border:#2e3648;
-            --board-bg:#1d2433; --board-edge:#39415a; --cell:#293349; --cell-line:#37425e;
-            --wall:#9db2d8; --wall-edge:#6d83ad;
-            --goal-dim:0.65; --piece-ring:#0b0e14;
-            --hist-bg:#1b2130; --overlay:rgba(5,8,14,0.62);
-            --shadow:0 1px 2px rgba(0,0,0,0.35);
+            --bg:#14161a; --card:#1d2026; --line:#2c3038; --line-soft:#242830;
+            --text:#e2e0da; --muted:#8f948e; --brand:#d2965f; --green:#4dbd8a;
+            --h1:#f2efe8; --label:#a9a396; --hint:#5d5a50; --footer:#7d7a6e;
+            --btn-bg:#242830; --btn-border:#383d47; --btn-text:#cfd3ca;
+            --btn-hover-bg:#2a2f38; --btn-hover-border:#484e5a;
+            --btn-on-bg:#3a2d20; --btn-on-border:#8a6136; --btn-on-text:#e0b789;
+            --input-bg:#1a1e24; --input-border:#383d47;
+            --board-bg:#101318; --board-edge:#272c35; --cell:#2a313c; --cell-line:#3a4250;
+            --groove:#1c222b; --wall:#d8ab72; --wall-edge:#8a6136;
+            --goal-dim:0.75; --piece-ring:#0d0f13;
+            --hist-bg:#22262e; --overlay:rgba(4,6,10,0.66);
+            --shadow:0 1px 3px rgba(0,0,0,0.4);
         } }
         * { margin:0; padding:0; box-sizing:border-box; font-family:'Segoe UI',-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',Roboto,Helvetica,Arial,sans-serif; }
         html, body { height:100%; }
@@ -57,7 +54,7 @@
         .app { height:100vh; max-width:1280px; margin:0 auto; padding:12px 16px; display:flex; flex-direction:column; gap:10px; }
         header { flex:0 0 auto; display:flex; align-items:baseline; justify-content:space-between; gap:16px; padding:10px 18px; background:var(--card); border:1px solid var(--line); border-radius:12px; box-shadow:var(--shadow); }
         h1 { display:flex; align-items:center; gap:9px; font-size:1.12rem; font-weight:600; letter-spacing:-0.01em; color:var(--h1); }
-        h1 .logo { display:flex; align-items:center; justify-content:center; width:26px; height:26px; border-radius:8px; background:linear-gradient(135deg,#d9a05b,#7a5230); font-size:14px; line-height:1; }
+        h1 .logo { display:flex; align-items:center; justify-content:center; width:26px; height:26px; border-radius:8px; background:linear-gradient(135deg,#c98a4b,#6b3d1c); font-size:13px; line-height:1; }
         .head-right { display:flex; align-items:baseline; flex-wrap:wrap; gap:14px; }
         .subtitle { font-size:0.76rem; color:var(--muted); }
         .btn-sm { padding:4px 10px; font-size:0.7rem; }
@@ -69,22 +66,22 @@
         .stage { flex:1 1 auto; min-width:0; }
         .stage-head { flex:0 0 auto; display:flex; align-items:center; justify-content:space-between; gap:14px; margin-bottom:9px; flex-wrap:wrap; }
         .stage-head h2 { margin-bottom:0; }
-        .mode-toggle { display:flex; gap:6px; }
+        .stage-hint { font-size:0.74rem; color:var(--hint); }
         .canvas-wrap { position:relative; flex:1 1 auto; min-height:0; display:flex; align-items:center; justify-content:center; }
-        .canvas-wrap canvas { display:block; border-radius:10px; box-shadow:inset 0 0 0 1px var(--line-soft); touch-action:none; }
+        .canvas-wrap canvas { display:block; border-radius:12px; touch-action:none; }
         .status-bar { flex:0 0 auto; margin-top:9px; padding:8px 12px; font-size:0.84rem; color:var(--text); background:var(--hist-bg); border:1px solid var(--line-soft); border-radius:9px; text-align:center; min-height:36px; }
         .status-bar b { font-weight:600; }
-        button { padding:8px 14px; font-size:0.8rem; font-weight:500; color:var(--btn-text); background:var(--btn-bg); border:1px solid var(--btn-border); border-radius:8px; cursor:pointer; box-shadow:0 1px 2px rgba(16,24,40,0.04); transition:background .15s,border-color .15s,color .15s,transform .06s; }
+        button { padding:8px 14px; font-size:0.8rem; font-weight:500; color:var(--btn-text); background:var(--btn-bg); border:1px solid var(--btn-border); border-radius:8px; cursor:pointer; box-shadow:0 1px 2px rgba(60,50,30,0.06); transition:background .15s,border-color .15s,color .15s,transform .06s; }
         button:hover { background:var(--btn-hover-bg); border-color:var(--btn-hover-border); }
         button:active { transform:translateY(1px); }
         button:disabled { opacity:.45; cursor:not-allowed; }
         button[aria-pressed="true"] { background:var(--btn-on-bg); border-color:var(--btn-on-border); color:var(--btn-on-text); }
-        button[aria-pressed="false"] { color:var(--muted); background:var(--btn-off-bg); }
+        button[aria-pressed="false"] { color:var(--muted); background:var(--btn-bg); }
         button.primary { color:#fff; background:var(--brand); border-color:var(--brand); }
         button.primary:hover { filter:brightness(1.08); background:var(--brand); }
         .controls { display:flex; flex-wrap:wrap; gap:7px; }
         .controls button { flex:1 1 auto; }
-        /* ---------------- 玩家卡片 ---------------- */
+        /* ---------------- player cards ---------------- */
         .player-card { display:flex; flex-direction:column; gap:6px; padding:9px 11px; margin-bottom:7px; background:var(--hist-bg); border:1px solid var(--line-soft); border-radius:10px; border-left:4px solid transparent; transition:border-color .2s, box-shadow .2s; }
         .player-card.turn { border-left-color:var(--pc,#888); box-shadow:0 0 0 1px var(--pc,#888) inset; }
         .player-card.win { border-left-color:var(--pc,#888); box-shadow:0 0 0 2px var(--pc,#888) inset; }
@@ -98,17 +95,17 @@
         .pc-wall.used { background:var(--line); }
         .pc-dist { margin-left:auto; font-variant-numeric:tabular-nums; }
         .pc-dist b { color:var(--text); }
-        /* ---------------- 历史 ---------------- */
+        /* ---------------- history ---------------- */
         .history { max-height:180px; overflow-y:auto; display:flex; flex-direction:column; gap:3px; font-size:0.74rem; font-variant-numeric:tabular-nums; }
         .hist-item { display:flex; gap:7px; padding:3px 8px; background:var(--hist-bg); border:1px solid var(--line-soft); border-radius:6px; color:var(--muted); }
         .hist-item .no { flex:0 0 22px; color:var(--hint); }
         .hist-item .who { flex:0 0 auto; font-weight:600; }
         .hist-item .what { margin-left:auto; color:var(--text); }
         .hist-empty { color:var(--hint); font-size:0.74rem; text-align:center; padding:8px 0; }
-        /* ---------------- 弹层 ---------------- */
+        /* ---------------- modals ---------------- */
         .overlay { position:fixed; inset:0; z-index:50; display:flex; align-items:center; justify-content:center; padding:18px; background:var(--overlay); backdrop-filter:blur(2px); }
         .overlay.hidden, .hidden { display:none !important; }
-        .modal { width:min(560px, 100%); max-height:calc(100vh - 40px); overflow-y:auto; background:var(--card); border:1px solid var(--line); border-radius:14px; padding:20px 22px; box-shadow:0 18px 50px rgba(16,24,40,0.25); }
+        .modal { width:min(560px, 100%); max-height:calc(100vh - 40px); overflow-y:auto; background:var(--card); border:1px solid var(--line); border-radius:14px; padding:20px 22px; box-shadow:0 18px 50px rgba(30,22,10,0.3); }
         .modal h2 { margin:0 0 4px; font-size:1.05rem; color:var(--h1); letter-spacing:0; text-transform:none; }
         .modal .sub { margin:0 0 14px; font-size:0.78rem; color:var(--muted); }
         .field-group { display:flex; flex-direction:column; gap:6px; margin-bottom:14px; }
@@ -123,8 +120,6 @@
         .seat-name input:focus { outline:none; border-color:var(--brand); }
         .seat-type { display:flex; gap:4px; flex:0 0 auto; }
         .seat-type button { padding:4px 9px; font-size:0.7rem; }
-        .seat-ai { flex:0 0 auto; }
-        .seat-ai select { padding:4px 7px; font-size:0.72rem; color:var(--btn-text); background:var(--input-bg); border:1px solid var(--input-border); border-radius:7px; }
         .modal-actions { display:flex; gap:9px; margin-top:6px; }
         .modal-actions button { flex:1 1 auto; padding:10px; font-size:0.86rem; }
         .win-modal { text-align:center; }
@@ -132,16 +127,14 @@
         .win-modal h2 { font-size:1.3rem; }
         .win-modal .sub { margin-bottom:18px; }
         .win-modal .crown, .win-modal h2 { color:var(--win-color,#111); }
-        /* ---------------- 规则折叠 ---------------- */
+        /* ---------------- rules block ---------------- */
         details.rules-block { border:1px solid var(--line-soft); border-radius:10px; padding:8px 12px; background:var(--hist-bg); }
         details.rules-block summary { font-size:0.78rem; font-weight:600; color:var(--label); cursor:pointer; }
         details.rules-block ol { margin:8px 0 2px; padding-left:20px; font-size:0.76rem; color:var(--muted); line-height:1.65; }
         footer { flex:0 0 auto; text-align:center; font-size:0.69rem; color:var(--footer); }
-        footer a { color:var(--footer); text-decoration:none; }
-        footer a:hover { color:var(--brand); }
-        .toast { position:fixed; top:16px; left:50%; z-index:999; padding:9px 20px; font-size:0.82rem; color:#fff; background:#111827; border-radius:9px; box-shadow:0 8px 24px rgba(16,24,40,0.18); transform:translateX(-50%) translateY(-300%); transition:transform .35s cubic-bezier(.34,1.4,.64,1); pointer-events:none; }
+        .toast { position:fixed; top:16px; left:50%; z-index:999; padding:9px 20px; font-size:0.82rem; color:#fff; background:#3a3428; border-radius:9px; box-shadow:0 8px 24px rgba(30,22,10,0.25); transform:translateX(-50%) translateY(-300%); transition:transform .35s cubic-bezier(.34,1.4,.64,1); pointer-events:none; }
         .toast.show { transform:translateX(-50%) translateY(0); }
-        .toast.error { background:#dc2626; }
+        .toast.error { background:#c0392b; }
         @media (max-height:860px) { .app { padding:10px 14px; gap:8px; } .panel { padding:10px; } .panel h2 { margin-bottom:7px; } .history { max-height:120px; } }
         @media (max-width:960px) { body { overflow:auto; } .app { height:auto; min-height:100vh; } .main-layout { flex-direction:column; } .sidebar { flex:0 0 auto; overflow:visible; } .canvas-wrap { height:min(92vw, 560px); } }
     </style>
@@ -149,9 +142,9 @@
 <body>
 <div class="app">
     <header>
-        <h1><span class="logo">🧱</span>步步为营 · Quoridor</h1>
+        <h1><span class="logo">▦</span>Quoridor</h1>
         <div class="head-right">
-            <span class="subtitle">挡板棋 · 双人 / 四人 · PVP / PVE · 纯前端</span>
+            <span class="subtitle">Wall placement game · 2 / 4 players · PVP / PVE</span>
             <button id="themeBtn" type="button" class="btn-sm">🌗 Auto</button>
         </div>
     </header>
@@ -159,11 +152,8 @@
     <div class="main-layout">
         <div class="panel stage">
             <div class="stage-head">
-                <h2>棋盘</h2>
-                <div class="mode-toggle">
-                    <button id="modeMoveBtn" type="button" aria-pressed="true">♟ 走子</button>
-                    <button id="modeWallBtn" type="button" aria-pressed="false">🧱 放墙</button>
-                </div>
+                <h2>Board</h2>
+                <span class="stage-hint">Click a cell to move · click a groove to place a wall</span>
             </div>
             <div class="canvas-wrap"><canvas id="board" width="600" height="600"></canvas></div>
             <div class="status-bar" id="statusBar">—</div>
@@ -171,60 +161,57 @@
 
         <aside class="panel sidebar">
             <section class="side-block">
-                <h2>玩家</h2>
+                <h2>Players</h2>
                 <div id="playersList"></div>
             </section>
             <section class="side-block">
-                <h2>操作</h2>
+                <h2>Actions</h2>
                 <div class="controls">
-                    <button id="undoBtn" type="button">↩ 悔棋</button>
-                    <button id="newGameBtn" type="button">⚙ 新开一局</button>
+                    <button id="undoBtn" type="button">↩ Undo</button>
+                    <button id="newGameBtn" type="button">⚙ New Game</button>
                 </div>
             </section>
             <section class="side-block">
-                <h2>历史</h2>
-                <div id="historyList" class="history"><div class="hist-empty">对局尚未开始</div></div>
+                <h2>History</h2>
+                <div id="historyList" class="history"><div class="hist-empty">No moves yet</div></div>
             </section>
             <section class="side-block">
-                <h2>说明</h2>
+                <h2>Help</h2>
                 <details class="rules-block">
-                    <summary>规则速览</summary>
+                    <summary>Rules at a glance</summary>
                     <ol>
-                        <li>把自己的棋子走到<b>对面底边</b>即获胜；轮到你时走一格（上下左右），或花费一块挡板。</li>
-                        <li>挡板长两格，放在格与格之间的凹槽里；不能与已有挡板重叠或十字交叉。</li>
-                        <li>任何挡板都<b>不允许把某位玩家完全围死</b>——必须有路可走到目标边。</li>
-                        <li>紧邻对手时可以<b>跳过</b>它（直线跳）；若正前方被挡板或棋子挡住，可<b>斜跳</b>到其侧边。</li>
-                        <li>双人局每人 10 块挡板；四人局每人 5 块，先抵达对面者胜。</li>
-                        <li>放墙模式：移动鼠标到格线交点附近，横向偏移→水平墙，纵向偏移→垂直墙。</li>
+                        <li>Reach the edge <b>opposite your start</b> to win. On your turn: move one square (orthogonally), or spend a wall.</li>
+                        <li>A wall spans two squares and sits in a groove between cells. It must not overlap or cross another wall.</li>
+                        <li>No wall may <b>seal any player off completely</b> — everyone must keep a path to their goal.</li>
+                        <li>When adjacent to an opponent you may <b>jump</b> straight over it; if that square is blocked by a wall, edge, or pawn, you may jump <b>diagonally</b> to its side instead.</li>
+                        <li>2-player: 10 walls each · 4-player: 5 walls each. First to reach the opposite edge wins.</li>
+                        <li>Walls: hover along a row groove for a horizontal wall, along a column groove for a vertical one.</li>
                     </ol>
                 </details>
             </section>
         </aside>
     </div>
 
-    <footer>
-        <a href="https://github.com/22ABLE22/quoridor" target="_blank" rel="noopener">源码仓库</a>
-        · 步步为营 / Quoridor 网页复刻 · 源代码 MIT License
-    </footer>
+    <footer>Quoridor</footer>
 </div>
 
 <div id="setupOverlay" class="overlay">
     <div class="modal">
-        <h2>新开一局</h2>
-        <p class="sub">选择对局人数与每个座位的玩家类型（真人 / 电脑 / 空）</p>
+        <h2>New Game</h2>
+        <p class="sub">Choose the player count and each seat's type (Human / AI / Off)</p>
         <div class="field-group">
-            <label>对局模式</label>
+            <label>Game mode</label>
             <div class="seg-row" id="modeSeg">
-                <button type="button" data-mode="2" aria-pressed="true">双人对战（各 10 墙）</button>
-                <button type="button" data-mode="4" aria-pressed="false">四人对战（各 5 墙）</button>
+                <button type="button" data-mode="2" aria-pressed="true">2 players · 10 walls each</button>
+                <button type="button" data-mode="4" aria-pressed="false">4 players · 5 walls each</button>
             </div>
         </div>
         <div class="field-group">
-            <label>座位设置</label>
+            <label>Seats</label>
             <div id="seatRows"></div>
         </div>
         <div class="modal-actions">
-            <button id="startBtn" type="button" class="primary">开始对局</button>
+            <button id="startBtn" type="button" class="primary">Start Game</button>
         </div>
     </div>
 </div>
@@ -232,11 +219,11 @@
 <div id="winOverlay" class="overlay hidden">
     <div class="modal win-modal">
         <div class="crown">🏆</div>
-        <h2 id="winTitle">红方 获胜</h2>
+        <h2 id="winTitle">Red wins</h2>
         <p class="sub" id="winSub">—</p>
         <div class="modal-actions">
-            <button id="rematchBtn" type="button" class="primary">再来一局</button>
-            <button id="reconfigBtn" type="button">更改设置</button>
+            <button id="rematchBtn" type="button" class="primary">Rematch</button>
+            <button id="reconfigBtn" type="button">Change Setup</button>
         </div>
     </div>
 </div>

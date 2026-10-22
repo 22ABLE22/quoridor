@@ -1,57 +1,70 @@
 'use strict';
 /* =========================================================================
- * QRender — 棋盘渲染（Canvas 2D）
- * 依赖：全局 QRules。
- * 主题：CSS 变量由 index.html 的 data-theme 体系提供，
- *       渲染前用 getComputedStyle 读取实时颜色，主题切换即重绘。
- * 布局常量：
- *   pad           棋盘外边距（留出边框线）
- *   cell          格子边长；groove = cell * 0.14（放墙的凹槽）
- *   棋盘点 (x,y) → 像素 cx = pad + x*(cell+groove) + cell/2（中心）
+ * QRender — board rendering (Canvas 2D)
+ * Depends on: global QRules. Theme colors are read from CSS variables
+ * (index.html data-theme system), so theme switching triggers a redraw.
+ *
+ * Geometry (CSS pixels; the canvas is scaled for devicePixelRatio):
+ *   pad      outer margin (board frame)
+ *   cell     square cell size; groove = cell * 0.16 (wall channel)
+ *   Cell (x,y) occupies  [pad + x*(cell+groove), +cell] in both axes.
+ *
+ * WALL GEOMETRY (fixes the "only horizontal walls" bug):
+ *   An h-wall at anchor (x,y) lives in the ROW groove between rows y and y+1
+ *   and spans columns x and x+1. Its center line is the groove's horizontal
+ *   center: cy = pad + y*(cell+groove) + cell + groove/2.
+ *   A v-wall at anchor (x,y) lives in the COLUMN groove between columns x
+ *   and x+1 and spans rows y and y+1. Its center line: cx = pad + x*(cell+groove)
+ *   + cell + groove/2.
+ *   Hit-testing mirrors this: the pointer picks whichever wall center line
+ *   it is closest to, so hovering along a row groove snaps horizontal walls
+ *   and along a column groove snaps vertical walls — no mode switch needed.
  * ========================================================================= */
 var QRender = (function () {
 
     const board = document.getElementById('board');
     const ctx = board.getContext('2d');
 
-    /* ---------------- 几何 ---------------- */
-    let PAD = 22, CELL = 54, GROOVE = 8;
+    /* ---------------- geometry ---------------- */
+    let PAD = 24, CELL = 54, GROOVE = 9;
 
     function computeMetrics(size) {
         const n = QRules.N;
-        // 9 格 + 8 凹槽 + 2 边距；凹槽约占格宽 14%
-        const unit = size / (n + (n - 1) * 0.14 + 2 * 0.42);
+        // n cells + (n-1) grooves + 2*pad; groove ≈ 16% of a cell
+        const unit = size / (n + (n - 1) * 0.16 + 2 * 0.46);
         CELL = unit;
-        GROOVE = unit * 0.14;
-        PAD = unit * 0.42;
-        return { PAD, CELL, GROOVE, size };
+        GROOVE = unit * 0.16;
+        PAD = unit * 0.46;
     }
 
-    function cellCenter(x, y) {
-        return {
-            cx: PAD + x * (CELL + GROOVE) + CELL / 2,
-            cy: PAD + y * (CELL + GROOVE) + CELL / 2
-        };
+    function cellRect(x, y) {
+        const left = PAD + x * (CELL + GROOVE);
+        const top = PAD + y * (CELL + GROOVE);
+        return { left, top, cx: left + CELL / 2, cy: top + CELL / 2 };
     }
 
-    /** 格点 (gx,gy) 中心像素（格点 = 格子角点交叉处，gx,gy ∈ [0,9]） */
-    function anchorCenter(gx, gy) {
-        return {
-            cx: PAD + gx * (CELL + GROOVE),
-            cy: PAD + gy * (CELL + GROOVE)
-        };
+    /** Center of the h-wall at anchor (x,y): middle of row groove y, spanning columns x..x+1. */
+    function hWallCenter(x, y) {
+        const gy = PAD + y * (CELL + GROOVE) + CELL + GROOVE / 2;
+        // center x = midpoint between column x center and column x+1 center
+        const c0 = PAD + x * (CELL + GROOVE) + CELL / 2;
+        const c1 = PAD + (x + 1) * (CELL + GROOVE) + CELL / 2;
+        return { cx: (c0 + c1) / 2, cy: gy };
     }
 
-    /**
-     * 墙锚点 (x,y) ∈ [0,7]² 的墙体中心像素。
-     * 与规则引擎的标准约定一致：h(x,y) 位于行间隙 y（行 y 与 y+1 之间）、
-     * 覆盖列 x 与 x+1，墙体中心在格点 (x+1, y+1)。
-     */
-    function wallCenter(x, y) {
-        return anchorCenter(x + 1, y + 1);
+    /** Center of the v-wall at anchor (x,y): middle of column groove x, spanning rows y..y+1. */
+    function vWallCenter(x, y) {
+        const gx = PAD + x * (CELL + GROOVE) + CELL + GROOVE / 2;
+        const r0 = PAD + y * (CELL + GROOVE) + CELL / 2;
+        const r1 = PAD + (y + 1) * (CELL + GROOVE) + CELL / 2;
+        return { cx: gx, cy: (r0 + r1) / 2 };
     }
 
-    /* ---------------- 主题色 ---------------- */
+    function wallCenter(x, y, isH) {
+        return isH ? hWallCenter(x, y) : vWallCenter(x, y);
+    }
+
+    /* ---------------- theme colors ---------------- */
     let theme = {};
     function readTheme() {
         const cs = getComputedStyle(document.documentElement);
@@ -61,6 +74,7 @@ var QRender = (function () {
             boardEdge: v('--board-edge'),
             cell: v('--cell'),
             cellLine: v('--cell-line'),
+            groove: v('--groove'),
             wall: v('--wall'),
             wallEdge: v('--wall-edge'),
             goalDim: parseFloat(v('--goal-dim')) || 0.55,
@@ -71,19 +85,18 @@ var QRender = (function () {
         };
     }
 
-    /* ---------------- 主绘制 ---------------- */
+    /* ---------------- main draw ---------------- */
 
     /**
-     * 绘制整盘。
-     * @param st 局面
+     * Draw the whole board.
+     * @param st game state
      * @param opts {
-     *   hoverCell, hoverWall {x,y,isH}, legalCells [], legalWalls [],
-     *   lastMove {from,to} | lastWall {x,y,isH}, mode ('move'|'wall'),
-     *   currentPi, winPi
+     *   hoverCell, hoverWall {x,y,isH,legal}, legalCells [],
+     *   lastMove {from,to} | lastWall {x,y,isH}, currentPi, winPi
      * }
      */
     function draw(st, opts) {
-        const size = board.width;
+        const sizeCss = board.width / (board._dpr || 1);
         const dpr = board._dpr || 1;
         ctx.save();
         ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -92,79 +105,99 @@ var QRender = (function () {
 
         const n = QRules.N;
 
-        // 底色
+        // Board frame
         ctx.fillStyle = theme.boardBg;
-        roundRect(0, 0, size / dpr, size / dpr, 10);
+        roundRect(0, 0, sizeCss, sizeCss, 12);
         ctx.fill();
+        ctx.strokeStyle = theme.boardEdge;
+        ctx.lineWidth = 2;
+        roundRect(1, 1, sizeCss - 2, sizeCss - 2, 11);
+        ctx.stroke();
 
-        // 目标边高亮（当前玩家的目标边）
-        drawGoalEdge(st, opts.currentPi, size / dpr);
+        // Goal edge highlight for the current player
+        drawGoalEdge(st, opts.currentPi, sizeCss);
 
-        // 格子
+        // Cells
         for (let y = 0; y < n; y++) {
             for (let x = 0; x < n; x++) {
-                const { cx, cy } = cellCenter(x, y);
+                const r = cellRect(x, y);
                 ctx.fillStyle = theme.cell;
                 ctx.strokeStyle = theme.cellLine;
                 ctx.lineWidth = 1;
-                roundRect(cx - CELL / 2, cy - CELL / 2, CELL, CELL, 4);
+                roundRect(r.left, r.top, CELL, CELL, 3);
                 ctx.fill();
                 ctx.stroke();
             }
         }
 
-        // 已放置的墙
+        // Grooves (subtle channels)
+        ctx.strokeStyle = theme.groove;
+        ctx.lineWidth = GROOVE * 0.66;
+        ctx.lineCap = 'round';
+        for (let i = 0; i < n - 1; i++) {
+            const gp = PAD + i * (CELL + GROOVE) + CELL + GROOVE / 2;
+            ctx.beginPath();
+            ctx.moveTo(PAD + GROOVE / 3, gp);
+            ctx.lineTo(sizeCss - PAD - GROOVE / 3, gp);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(gp, PAD + GROOVE / 3);
+            ctx.lineTo(gp, sizeCss - PAD - GROOVE / 3);
+            ctx.stroke();
+        }
+
+        // Placed walls
         for (let y = 0; y < QRules.ANCH; y++) {
             for (let x = 0; x < QRules.ANCH; x++) {
-                if (st.hw[y][x]) drawWall(x, y, true, false);
-                if (st.vw[y][x]) drawWall(x, y, false, false);
+                if (st.hw[y][x]) drawWall(x, y, true, 1);
+                if (st.vw[y][x]) drawWall(x, y, false, 1);
             }
         }
 
-        // 最后一手标记
-        if (opts.lastWall) drawWall(opts.lastWall.x, opts.lastWall.y, opts.lastWall.isH, true);
+        // Last wall emphasis
+        if (opts.lastWall) drawWall(opts.lastWall.x, opts.lastWall.y, opts.lastWall.isH, 1.06);
 
-        // 走子模式：合法落点高亮 + 悬停
-        if (opts.mode === 'move') {
-            for (const c of (opts.legalCells || [])) {
-                const { cx, cy } = cellCenter(c.x, c.y);
-                ctx.fillStyle = withAlpha(theme.brand, c.jump ? 0.22 : 0.16);
-                roundRect(cx - CELL / 2 + 3, cy - CELL / 2 + 3, CELL - 6, CELL - 6, 4);
-                ctx.fill();
-                if (c.jump) {
-                    ctx.strokeStyle = withAlpha(theme.brand, 0.65);
-                    ctx.lineWidth = 2;
-                    roundRect(cx - CELL / 2 + 3, cy - CELL / 2 + 3, CELL - 6, CELL - 6, 4);
-                    ctx.stroke();
-                }
-            }
-            if (opts.hoverCell) {
-                const { cx, cy } = cellCenter(opts.hoverCell.x, opts.hoverCell.y);
-                ctx.fillStyle = withAlpha(theme.brand, 0.34);
-                roundRect(cx - CELL / 2 + 2, cy - CELL / 2 + 2, CELL - 4, CELL - 4, 4);
-                ctx.fill();
+        // Legal move highlights (always shown for the human on turn)
+        for (const c of (opts.legalCells || [])) {
+            const r = cellRect(c.x, c.y);
+            ctx.fillStyle = withAlpha(theme.brand, c.jump ? 0.30 : 0.20);
+            roundRect(r.left + 3, r.top + 3, CELL - 6, CELL - 6, 3);
+            ctx.fill();
+            if (c.jump) {
+                ctx.strokeStyle = withAlpha(theme.brand, 0.7);
+                ctx.lineWidth = 2;
+                roundRect(r.left + 3, r.top + 3, CELL - 6, CELL - 6, 3);
+                ctx.stroke();
             }
         }
 
-        // 放墙模式：悬停墙预览
-        if (opts.mode === 'wall' && opts.hoverWall && opts.hoverWall.legal !== false) {
-            drawWall(opts.hoverWall.x, opts.hoverWall.y, opts.hoverWall.isH, true);
-        }
-        // 放墙模式：非法位置提示（红色）
-        if (opts.mode === 'wall' && opts.hoverWall && opts.hoverWall.legal === false) {
-            drawIllegalHint(opts.hoverWall);
+        // Hover cell preview
+        if (opts.hoverCell) {
+            const r = cellRect(opts.hoverCell.x, opts.hoverCell.y);
+            ctx.fillStyle = withAlpha(theme.brand, 0.36);
+            roundRect(r.left + 2, r.top + 2, CELL - 4, CELL - 4, 3);
+            ctx.fill();
         }
 
-        // 棋子
+        // Hover wall preview (green if legal, red if not)
+        if (opts.hoverWall) {
+            drawWall(opts.hoverWall.x, opts.hoverWall.y, opts.hoverWall.isH,
+                opts.hoverWall.legal === false ? 0 : (opts.hoverWall.legal ? 1 : 0));
+            if (opts.hoverWall.legal === false) {
+                drawWallDenied(opts.hoverWall);
+            }
+        }
+
+        // Pawns
         for (let i = 0; i < st.players.length; i++) {
             drawPiece(st.players[i], i === opts.currentPi && st.winner === null);
         }
 
-        // 最后一手走子轨迹
+        // Last move trail
         if (opts.lastMove) {
-            const a = cellCenter(opts.lastMove.from.x, opts.lastMove.from.y);
-            const b = cellCenter(opts.lastMove.to.x, opts.lastMove.to.y);
-            ctx.strokeStyle = withAlpha('#f59e0b', 0.75);
+            const a = cellRect(opts.lastMove.from.x, opts.lastMove.from.y);
+            const b = cellRect(opts.lastMove.to.x, opts.lastMove.to.y);
+            ctx.strokeStyle = withAlpha('#f5a623', 0.8);
             ctx.lineWidth = 2.5;
             ctx.setLineDash([6, 5]);
             ctx.beginPath();
@@ -177,13 +210,13 @@ var QRender = (function () {
         ctx.restore();
     }
 
-    /* ---------------- 子绘制 ---------------- */
+    /* ---------------- sub-draws ---------------- */
 
     function drawGoalEdge(st, pi, sizeCss) {
         if (pi == null || !st.players[pi]) return;
         const p = st.players[pi];
+        const t = Math.max(7, GROOVE);
         let x, y, w, h;
-        const t = Math.max(6, GROOVE);
         if (p.goal === 'N') { x = PAD - t / 2; y = 0; w = sizeCss - 2 * (PAD - t / 2); h = t; }
         else if (p.goal === 'S') { x = PAD - t / 2; y = sizeCss - t; w = sizeCss - 2 * (PAD - t / 2); h = t; }
         else if (p.goal === 'W') { x = 0; y = PAD - t / 2; w = t; h = sizeCss - 2 * (PAD - t / 2); }
@@ -196,71 +229,92 @@ var QRender = (function () {
         ctx.restore();
     }
 
-    function drawWall(x, y, isH, isGhost) {
-        const { cx, cy } = wallCenter(x, y);
-        const L = CELL * 2 + GROOVE;   // 墙长两格
-        const T = Math.max(7, GROOVE * 0.9);   // 墙厚
+    /**
+     * Draw a wall. alpha: 1 = solid, 0 = preview (translucent).
+     * Orientation matters:
+     *   h-wall → wide × thin (long axis horizontal, lying in a row groove)
+     *   v-wall → thin × tall (long axis vertical, lying in a column groove)
+     */
+    function drawWall(x, y, isH, alpha) {
+        const L = CELL * 2 + GROOVE;             // wall length (along the groove span)
+        const T = Math.max(8, GROOVE * 0.95);    // wall thickness
+        const { cx, cy } = wallCenter(x, y, isH);
+        const w = isH ? L : T;
+        const h = isH ? T : L;
         ctx.save();
-        if (isGhost) ctx.globalAlpha = 0.55;
-        // 阴影
-        ctx.fillStyle = withAlpha(theme.wallEdge, 0.5);
-        roundRect(cx - L / 2 + 1.5, cy - T / 2 + 1.5, L, T, 3);
+        ctx.globalAlpha = alpha === 1 ? 1 : alpha === 0 ? 0.5 : Math.min(1, alpha);
+        // drop shadow
+        ctx.fillStyle = withAlpha(theme.wallEdge, 0.55);
+        roundRect(cx - w / 2 + 1.5, cy - h / 2 + 1.5, w, h, 4);
         ctx.fill();
+        // body
         ctx.fillStyle = theme.wall;
-        roundRect(cx - L / 2, cy - T / 2, L, T, 3);
+        roundRect(cx - w / 2, cy - h / 2, w, h, 4);
         ctx.fill();
         ctx.strokeStyle = theme.wallEdge;
-        ctx.lineWidth = 1;
-        roundRect(cx - L / 2, cy - T / 2, L, T, 3);
+        ctx.lineWidth = 1.2;
+        roundRect(cx - w / 2, cy - h / 2, w, h, 4);
         ctx.stroke();
         ctx.restore();
     }
 
-    function drawIllegalHint(hover) {
-        const { cx, cy } = wallCenter(hover.x, hover.y);
-        const L = CELL * 2 + GROOVE, T = Math.max(7, GROOVE * 0.9);
+    function drawWallDenied(hover) {
+        const L = CELL * 2 + GROOVE, T = Math.max(8, GROOVE * 0.95);
+        const { cx, cy } = wallCenter(hover.x, hover.y, hover.isH);
+        const w = hover.isH ? L : T;
+        const h = hover.isH ? T : L;
         ctx.save();
-        ctx.globalAlpha = 0.4;
-        ctx.strokeStyle = '#ef4444';
+        ctx.globalAlpha = 0.75;
+        ctx.strokeStyle = '#e5484d';
         ctx.lineWidth = 2.5;
-        roundRect(cx - L / 2, cy - T / 2, L, T, 3);
+        roundRect(cx - w / 2, cy - h / 2, w, h, 4);
+        ctx.stroke();
+        // slash across the long axis
+        ctx.beginPath();
+        if (hover.isH) {
+            ctx.moveTo(cx - w / 2 + 4, cy - h / 2 - 2);
+            ctx.lineTo(cx + w / 2 - 4, cy + h / 2 + 2);
+        } else {
+            ctx.moveTo(cx - w / 2 - 2, cy - h / 2 + 4);
+            ctx.lineTo(cx + w / 2 + 2, cy + h / 2 - 4);
+        }
         ctx.stroke();
         ctx.restore();
     }
 
     function drawPiece(p, isCurrent) {
-        const { cx, cy } = cellCenter(p.pos.x, p.pos.y);
-        const r = CELL * 0.34;
+        const r = cellRect(p.pos.x, p.pos.y);
+        const cx = r.cx, cy = r.cy;
+        const rad = CELL * 0.36;
         ctx.save();
-        // 阴影
+        // shadow
         ctx.beginPath();
-        ctx.arc(cx + 1.5, cy + 2.5, r, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(0,0,0,0.28)';
+        ctx.arc(cx + 1.5, cy + 2.5, rad, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(0,0,0,0.3)';
         ctx.fill();
-        // 主体
-        const grad = ctx.createRadialGradient(cx - r * 0.35, cy - r * 0.4, r * 0.2, cx, cy, r);
+        // body
+        const grad = ctx.createRadialGradient(cx - rad * 0.35, cy - rad * 0.4, rad * 0.2, cx, cy, rad);
         grad.addColorStop(0, lighten(p.color, 0.45));
         grad.addColorStop(1, p.color);
         ctx.beginPath();
-        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.arc(cx, cy, rad, 0, Math.PI * 2);
         ctx.fillStyle = grad;
         ctx.fill();
         ctx.lineWidth = 2;
         ctx.strokeStyle = theme.pieceRing;
         ctx.stroke();
-        // 当前回合光圈
+        // turn ring
         if (isCurrent) {
             ctx.beginPath();
-            ctx.arc(cx, cy, r + 4.5, 0, Math.PI * 2);
-            ctx.strokeStyle = withAlpha(p.color, 0.55);
+            ctx.arc(cx, cy, rad + 4.5, 0, Math.PI * 2);
+            ctx.strokeStyle = withAlpha(p.color, 0.6);
             ctx.lineWidth = 3;
             ctx.stroke();
-            // 呼吸动画由 app.js 定时触发重绘实现
         }
         ctx.restore();
     }
 
-    /* ---------------- 工具 ---------------- */
+    /* ---------------- helpers ---------------- */
 
     function roundRect(x, y, w, h, r) {
         ctx.beginPath();
@@ -273,17 +327,14 @@ var QRender = (function () {
     }
 
     function withAlpha(hex, a) {
-        return rgbaString(hex, a);
-    }
-
-    function rgbaString(color, a) {
-        if (color.startsWith('#')) {
-            let h = color.slice(1);
+        if (!hex) return hex;
+        if (hex.startsWith('#')) {
+            let h = hex.slice(1);
             if (h.length === 3) h = h.split('').map(c => c + c).join('');
             const r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16);
             return `rgba(${r},${g},${b},${a})`;
         }
-        return color;
+        return hex;
     }
 
     function lighten(hex, k) {
@@ -294,47 +345,54 @@ var QRender = (function () {
         return `rgb(${f(r)},${f(g)},${f(b)})`;
     }
 
-    /* ---------------- 反查：像素 → 格子 / 墙锚 ---------------- */
+    /* ---------------- hit-testing (pixel → cell / wall intent) ---------------- */
 
     function pixelToCell(px, py) {
         const n = QRules.N;
         for (let y = 0; y < n; y++) {
             for (let x = 0; x < n; x++) {
-                const { cx, cy } = cellCenter(x, y);
-                if (Math.abs(px - cx) <= CELL / 2 && Math.abs(py - cy) <= CELL / 2) return { x, y };
+                const r = cellRect(x, y);
+                if (px >= r.left && px <= r.left + CELL && py >= r.top && py <= r.top + CELL) {
+                    return { x, y };
+                }
             }
         }
         return null;
     }
 
     /**
-     * 像素 → 墙放置意图。对每个锚点，计算指针到“水平墙中心线”与
-     * “垂直墙中心线”的距离，取两者中更近（且在吸附范围内）的作为意图。
+     * Pixel → wall intent. Distance from the pointer to each wall's CENTER
+     * LINE (horizontal groove center for h-walls, column groove center for
+     * v-walls); the nearest candidate within the snap radius wins. This is
+     * what makes both orientations reachable:
+     *   - pointer inside/near a row groove → nearest h-wall
+     *   - pointer inside/near a column groove → nearest v-wall
      */
     function pixelToWall(px, py) {
         const A = QRules.ANCH;
-        const reach = GROOVE * 1.1 + 6;   // 吸附半径
+        const snap = GROOVE * 1.35 + 5;
+        const halfLen = CELL + GROOVE / 2;   // half of wall length
         let best = null, bestDist = Infinity;
         for (let y = 0; y < A; y++) {
             for (let x = 0; x < A; x++) {
-                const { cx, cy } = wallCenter(x, y);
-                const dH = Math.abs(py - cy);   // 水平墙：贴近其水平中心线
-                const dV = Math.abs(px - cx);   // 垂直墙：贴近其垂直中心线
-                // 指针须落在墙体的合理范围内（长度的 ±(CELL+GROOVE/2)）
-                const alongH = Math.abs(px - cx) <= CELL + GROOVE / 2;
-                const alongV = Math.abs(py - cy) <= CELL + GROOVE / 2;
-                const cand = [];
-                if (alongH && dH < reach) cand.push({ d: dH, w: { x, y, isH: true } });
-                if (alongV && dV < reach) cand.push({ d: dV, w: { x, y, isH: false } });
-                for (const c of cand) {
-                    if (c.d < bestDist) { bestDist = c.d; best = c.w; }
+                // horizontal wall candidates
+                const hc = hWallCenter(x, y);
+                if (Math.abs(px - hc.cx) <= halfLen) {
+                    const d = Math.abs(py - hc.cy);
+                    if (d < snap && d < bestDist) { bestDist = d; best = { x, y, isH: true }; }
+                }
+                // vertical wall candidates
+                const vc = vWallCenter(x, y);
+                if (Math.abs(py - vc.cy) <= halfLen) {
+                    const d = Math.abs(px - vc.cx);
+                    if (d < snap && d < bestDist) { bestDist = d; best = { x, y, isH: false }; }
                 }
             }
         }
         return best;
     }
 
-    /* ---------------- 高分屏自适应 ---------------- */
+    /* ---------------- DPI handling ---------------- */
 
     function resize(cssSize) {
         const dpr = Math.min(2, window.devicePixelRatio || 1);
@@ -348,11 +406,12 @@ var QRender = (function () {
 
     return {
         board, ctx, draw, resize,
-        cellCenter, anchorCenter, wallCenter, pixelToCell, pixelToWall,
+        cellRect, hWallCenter, vWallCenter, wallCenter,
+        pixelToCell, pixelToWall,
         get CELL() { return CELL; }, get GROOVE() { return GROOVE; }, get PAD() { return PAD; },
         readTheme
     };
 })();
 
-/* Node（测试）环境下挂到 module.exports，浏览器下保持全局变量 */
+/* Node (tests) export; browser keeps the global. */
 if (typeof module !== 'undefined' && module.exports) module.exports = QRender;

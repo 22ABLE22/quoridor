@@ -1,26 +1,28 @@
 'use strict';
 /* =========================================================================
- * QInput — 指针输入（鼠标 + 触摸，Pointer Events 统一处理）
- * 依赖：全局 QRender（几何反查）、QRules。
+ * QInput — pointer input (mouse + touch via Pointer Events)
+ * Depends on: global QRender (hit-testing), QRules.
  *
- * 交互设计：
- *   走子模式：点击合法落点走子；悬停高亮（触摸按下即高亮，抬起确认）。
- *   放墙模式：指针在墙位附近移动 → 按横/纵贴近自动选择水平/垂直墙预览；
- *             双击（350ms 内同锚点）切换横竖；单击/抬起确认放置。
- *   AI 回合或已分胜负时输入被忽略。
+ * Interaction (no mode switch):
+ *   - Hover/click a cell → move the pawn there (if legal).
+ *   - Hover/click in a groove → place a wall there (orientation is decided
+ *     by which groove the pointer is in: row groove = horizontal wall,
+ *     column groove = vertical wall).
+ *   - Both previews are always live: legal move targets glow, the wall
+ *     under the pointer shows green (legal) or red (illegal).
+ *   - Input is ignored during AI turns and after the game is over.
  * ========================================================================= */
 var QInput = (function () {
 
     const board = QRender.board;
-    let handler = null;      // {onCellTap, onWallTap, onHover} 由 ui/app 注入
-    let lastTapTime = 0, lastTapWallKey = '';
+    let handler = null;   // {onHover, onTap} injected by app.js
 
     function bind(h) { handler = h; }
 
     function boardPos(e) {
         const rect = board.getBoundingClientRect();
-        // CSS 像素 → 画布 CSS 尺寸（render 内部按 CSS 尺寸计算几何）
-        const scale = (parseFloat(board.style.width) || board.getBoundingClientRect().width) / rect.width;
+        const cssW = parseFloat(board.style.width) || rect.width;
+        const scale = cssW / rect.width;
         return { px: (e.clientX - rect.left) * scale, py: (e.clientY - rect.top) * scale };
     }
 
@@ -32,7 +34,7 @@ var QInput = (function () {
 
     function onPointerDown(e) {
         if (!handler || !handler.onHover) return;
-        // 触摸：按下即预览（等同 hover）
+        // touch: show preview on press
         const { px, py } = boardPos(e);
         handler.onHover(QRender.pixelToCell(px, py), QRender.pixelToWall(px, py));
     }
@@ -40,15 +42,7 @@ var QInput = (function () {
     function onPointerUp(e) {
         if (!handler || !handler.onTap) return;
         const { px, py } = boardPos(e);
-        const cell = QRender.pixelToCell(px, py);
-        const wall = QRender.pixelToWall(px, py);
-        // 双击检测（放墙模式切横竖）
-        const now = Date.now();
-        const wallKey = wall ? wall.x + ',' + wall.y : '';
-        const isDouble = wall && now - lastTapTime < 350 && wallKey === lastTapWallKey;
-        lastTapTime = now;
-        lastTapWallKey = wallKey;
-        handler.onTap(cell, wall, isDouble);
+        handler.onTap(QRender.pixelToCell(px, py), QRender.pixelToWall(px, py));
     }
 
     function onPointerLeave() {
@@ -61,11 +55,10 @@ var QInput = (function () {
     board.addEventListener('pointerup', onPointerUp);
     board.addEventListener('pointercancel', onPointerLeave);
     board.addEventListener('pointerleave', onPointerLeave);
-    // 阻止触摸滚动/缩放棋盘（CSS touch-action 亦已设置）
     board.style.touchAction = 'none';
 
     return { bind };
 })();
 
-/* Node（测试）环境下挂到 module.exports，浏览器下保持全局变量 */
+/* Node (tests) export; browser keeps the global. */
 if (typeof module !== 'undefined' && module.exports) module.exports = QInput;

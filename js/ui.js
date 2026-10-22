@@ -1,13 +1,13 @@
 'use strict';
 /* =========================================================================
- * QUI — 页面 UI 控制
- * 依赖：全局 QRules。
- * 职责：主题切换（Auto/Light/Dark 循环 + localStorage）、玩家卡片、
- *       历史列表、状态栏、设置弹层、胜利弹层、toast。
+ * QUI — page UI controls
+ * Depends on: global QRules.
+ * Owns: theme cycling (Auto/Light/Dark + localStorage), player cards,
+ * history list, status bar, setup modal, win modal, toast.
  * ========================================================================= */
 var QUI = (function () {
 
-    /* ---------------- 主题 ---------------- */
+    /* ---------------- theme ---------------- */
     const THEME_ORDER = ['auto', 'light', 'dark'];
     const THEME_LABEL = { auto: '🌗 Auto', light: '☀️ Light', dark: '🌙 Dark' };
     const themeBtn = document.getElementById('themeBtn');
@@ -21,7 +21,7 @@ var QUI = (function () {
     function applyTheme(mode) {
         document.documentElement.dataset.theme = mode;
         themeBtn.textContent = THEME_LABEL[mode] || THEME_LABEL.auto;
-        if (window.QRender && QRender.readTheme) document.dispatchEvent(new Event('quoridor:redraw'));
+        document.dispatchEvent(new Event('quoridor:redraw'));
     }
     let themeMode = readTheme();
     if (!THEME_LABEL[themeMode]) themeMode = 'auto';
@@ -32,7 +32,7 @@ var QUI = (function () {
         applyTheme(themeMode);
     });
 
-    /* ---------------- 常用 DOM ---------------- */
+    /* ---------------- DOM handles ---------------- */
     const statusBar = document.getElementById('statusBar');
     const playersList = document.getElementById('playersList');
     const historyList = document.getElementById('historyList');
@@ -40,18 +40,19 @@ var QUI = (function () {
     const winOverlay = document.getElementById('winOverlay');
     const toastEl = document.getElementById('toast');
 
-    /* ---------------- 状态栏 ---------------- */
+    /* ---------------- status bar ---------------- */
     function setStatus(html) { statusBar.innerHTML = html; }
 
-    /* ---------------- 玩家卡片 ---------------- */
+    /* ---------------- player cards ---------------- */
     function renderPlayers(st) {
         playersList.innerHTML = '';
         for (const p of st.players) {
             const card = document.createElement('div');
-            card.className = 'player-card' + (st.winner === null && st.players[st.turn].id === p.id ? ' turn' : '') +
+            card.className = 'player-card' +
+                (st.winner === null && st.players[st.turn].id === p.id ? ' turn' : '') +
                 (st.winner === p.id ? ' win' : '');
             card.style.setProperty('--pc', p.color);
-            const typeTag = p.type === 'ai' ? 'AI · ' + levelName(p.aiLevel) : '真人';
+            const typeTag = p.type === 'ai' ? 'AI' : 'Human';
             card.innerHTML =
                 '<div class="pc-row1">' +
                     '<span class="pc-dot"></span>' +
@@ -59,36 +60,31 @@ var QUI = (function () {
                     '<span class="pc-tag"></span>' +
                 '</div>' +
                 '<div class="pc-row2">' +
-                    '<span>挡板</span>' +
+                    '<span>Walls</span>' +
                     '<span class="pc-walls"></span>' +
-                    '<span class="pc-dist">距终点 <b>—</b></span>' +
+                    '<span class="pc-dist"><b>—</b> to goal</span>' +
                 '</div>';
             card.querySelector('.pc-name').textContent = p.name;
             card.querySelector('.pc-tag').textContent = typeTag;
-            // 挡板余量
             const wallsBox = card.querySelector('.pc-walls');
             for (let i = 0; i < p.wallQuota; i++) {
                 const w = document.createElement('span');
                 w.className = 'pc-wall' + (i < p.wallQuota - p.walls ? ' used' : '');
                 wallsBox.appendChild(w);
             }
-            // 距离
             const d = QRules.distanceToGoal(st, p.id);
             card.querySelector('.pc-dist b').textContent = isFinite(d) ? d : '∞';
             playersList.appendChild(card);
         }
     }
 
-    function levelName(lv) { return lv <= 1 ? '入门' : lv === 2 ? '进阶' : '大师'; }
-
-    /* ---------------- 历史 ---------------- */
+    /* ---------------- history ---------------- */
     function renderHistory(st) {
         historyList.innerHTML = '';
         if (!st.history.length) {
-            historyList.innerHTML = '<div class="hist-empty">对局尚未开始</div>';
+            historyList.innerHTML = '<div class="hist-empty">No moves yet</div>';
             return;
         }
-        // 倒序显示，最新在上
         for (let i = st.history.length - 1; i >= 0; i--) {
             const rec = st.history[i];
             const item = document.createElement('div');
@@ -109,17 +105,15 @@ var QUI = (function () {
         }
     }
 
-    /* ---------------- 弹层 ---------------- */
+    /* ---------------- modals ---------------- */
     function showSetup() { setupOverlay.classList.remove('hidden'); }
     function hideSetup() { setupOverlay.classList.add('hidden'); }
     function showWin(st) {
         const p = st.players[st.winner];
-        const winTitle = document.getElementById('winTitle');
-        const winSub = document.getElementById('winSub');
-        const modal = winOverlay.querySelector('.modal');
-        winTitle.textContent = p.name + ' 获胜';
-        winSub.textContent = '共 ' + st.history.length + ' 手 · ' + st.mode + ' 人局';
-        modal.style.setProperty('--win-color', p.color);
+        document.getElementById('winTitle').textContent = p.name + ' wins';
+        document.getElementById('winSub').textContent =
+            st.history.length + ' moves · ' + st.players.length + ' players';
+        winOverlay.querySelector('.modal').style.setProperty('--win-color', p.color);
         winOverlay.classList.remove('hidden');
     }
     function hideWin() { winOverlay.classList.add('hidden'); }
@@ -133,15 +127,15 @@ var QUI = (function () {
         toastTimer = setTimeout(() => { toastEl.className = 'toast'; }, 1800);
     }
 
-    /* ---------------- 对外 ---------------- */
+    /* ---------------- public ---------------- */
     return {
         themeBtn, statusBar, playersList, historyList,
         setupOverlay, winOverlay,
         setStatus, renderPlayers, renderHistory,
         showSetup, hideSetup, showWin, hideWin,
-        showToast, levelName
+        showToast
     };
 })();
 
-/* Node（测试）环境下挂到 module.exports，浏览器下保持全局变量 */
+/* Node (tests) export; browser keeps the global. */
 if (typeof module !== 'undefined' && module.exports) module.exports = QUI;

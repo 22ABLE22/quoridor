@@ -21,12 +21,12 @@ var QRules = (function () {
     const N = 9;          // 棋盘边长
     const ANCH = N - 1;   // 挡板锚点边长（8）
 
-    // 座位模板：颜色 / 默认名 / 起点 / 目标边
+    // Seat templates: color / default name / start cell / goal edge
     const SEAT_DEFS = [
-        { key: 'N', name: '红方', color: '#dc2626', start: { x: 4, y: 8 }, goal: 'N' },
-        { key: 'S', name: '蓝方', color: '#2563eb', start: { x: 4, y: 0 }, goal: 'S' },
-        { key: 'E', name: '绿方', color: '#059669', start: { x: 0, y: 4 }, goal: 'E' },
-        { key: 'W', name: '黄方', color: '#d97706', start: { x: 8, y: 4 }, goal: 'W' }
+        { key: 'N', name: 'Red',   color: '#d64545', start: { x: 4, y: 8 }, goal: 'N' },
+        { key: 'S', name: 'Blue',  color: '#3f6fd8', start: { x: 4, y: 0 }, goal: 'S' },
+        { key: 'E', name: 'Green', color: '#2e9e63', start: { x: 0, y: 4 }, goal: 'E' },
+        { key: 'W', name: 'Gold',  color: '#cf9430', start: { x: 8, y: 4 }, goal: 'W' }
     ];
 
     // 四个移动方向：上右下左（屏幕坐标，y 向下）
@@ -45,11 +45,11 @@ var QRules = (function () {
     /* ------------------------------------------------------------------ */
 
     /**
-     * 创建一局游戏。
-     * @param {number} mode 2 或 4
-     * @param {Array} seats 座位配置，长度 = mode，元素：
-     *   { name: string, type: 'human'|'ai'|'off', aiLevel: 1|2|3 }
-     *   type === 'off' 的座位被剔除（不参与对局）。
+     * Create a game.
+     * @param {number} mode 2 or 4
+     * @param {Array} seats seat config, length = mode, each element:
+     *   { name: string, type: 'human'|'ai'|'off' }
+     *   seats with type 'off' are dropped (not part of the game).
      */
     function createGame(mode, seats) {
         if (mode !== 2 && mode !== 4) throw new Error('mode must be 2 or 4');
@@ -65,19 +65,18 @@ var QRules = (function () {
                 color: defs[i].color,
                 goal: defs[i].goal,
                 type: seat.type === 'ai' ? 'ai' : 'human',
-                aiLevel: Math.min(3, Math.max(1, seat.aiLevel || 2)),
                 wallQuota: mode === 2 ? 10 : 5,
                 walls: mode === 2 ? 10 : 5,
                 pos: { x: defs[i].start.x, y: defs[i].start.y }
             });
         }
-        if (players.length < 2) throw new Error('至少需要 2 名参与的玩家');
+        if (players.length < 2) throw new Error('at least 2 players are required');
         return {
             mode,
             players,
-            hw: emptyAnchors(),   // hw[y][x] = 1 表示水平墙（锚 x,y）
-            vw: emptyAnchors(),   // vw[y][x] = 1 表示垂直墙（锚 x,y）
-            turn: 0,              // players 数组下标
+            hw: emptyAnchors(),   // hw[y][x] = 1 → horizontal wall at anchor (x,y)
+            vw: emptyAnchors(),   // vw[y][x] = 1 → vertical wall at anchor (x,y)
+            turn: 0,              // index into players
             moveNo: 1,
             history: [],
             winner: null
@@ -342,13 +341,13 @@ var QRules = (function () {
 
     const COLS = 'ABCDEFGHI';
     function cellName(x, y) { return COLS[x] + (y + 1); }
-    function wallName(x, y, isH) { return (isH ? '横' : '竖') + cellName(x + 1, y + 1); }
+    function wallName(x, y, isH) { return cellName(x, y) + (isH ? 'h' : 'v'); }
     function moveDesc(rec) {
         if (rec.type === 'move') {
-            const tag = rec.jump ? ' 跳跃' : '';
+            const tag = rec.jump ? ' (jump)' : '';
             return cellName(rec.from.x, rec.from.y) + '→' + cellName(rec.to.x, rec.to.y) + tag;
         }
-        return '放墙 ' + wallName(rec.x, rec.y, rec.isH);
+        return 'wall ' + wallName(rec.x, rec.y, rec.isH);
     }
 
     /* ------------------------------------------------------------------ */

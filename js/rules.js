@@ -146,41 +146,147 @@ var QRules = (function () {
     /* BFS：忽略棋子的最短距离（用于可达性校验与 AI 评估）                   */
     /* ------------------------------------------------------------------ */
 
+    /** goal 判定（对象版，外部 API；BFS 内部用坐标版 atGoalXY） */
     function atGoal(p, cell) {
-        switch (p.goal) {
-            case 'N': return cell.y === 0;
-            case 'S': return cell.y === N - 1;
-            case 'E': return cell.x === N - 1;
-            case 'W': return cell.x === 0;
+        return atGoalXY(p.goal, cell.x, cell.y);
+    }
+
+    // 可复用的 scratch buffers：规则引擎是单线程使用（浏览器主线程或
+    // Worker 内各持一份 QRules 实例），避免每次 BFS 分配 81 格数组。
+    const _dist = Array.from({ length: N }, () => new Int16Array(N));
+    const _queue = new Int16Array(N * N);
+
+    /**
+     * 玩家从当前位置到目标边的最短步数（忽略其它棋子，只考虑墙）。
+     * 不可达返回 Infinity。零堆分配（scratch buffer 复用）。
+     */
+    function distanceToGoal(st, pi) {
+        const p = st.players[pi];
+        const px = p.pos.x, py = p.pos.y;
+        if (atGoalXY(p.goal, px, py)) return 0;
+        const hw = st.hw, vw = st.vw;
+        const dist = _dist;
+        // 惰性代：用 moveNo×玩家数+1 做世代标记，避免每次清 81 格。
+        // 简化做法：由于 81 格很小，直接 fill(-1) 也远快于分配新数组。
+        for (let y = 0; y < N; y++) dist[y].fill(-1);
+        const q = _queue;
+        let head = 0, tail = 0;
+        q[tail++] = py * N + px;
+        dist[py][px] = 0;
+        while (head < tail) {
+            const cell = q[head++];
+            const cx = cell % N, cy = (cell - cx) / N;
+            const d = dist[cy][cx] + 1;
+            // 上（行间隙 cy-1，h 锚 (cx,·)/(cx-1,·)）
+            if (cy > 0 && dist[cy - 1][cx] < 0) {
+                const gy = cy - 1;
+                if (!((cx < ANCH && hw[gy][cx] > 0) || (cx > 0 && hw[gy][cx - 1] > 0))) {
+                    if (atGoalXY(p.goal, cx, cy - 1)) return d;
+                    dist[cy - 1][cx] = d;
+                    q[tail++] = (cy - 1) * N + cx;
+                }
+            }
+            // 下（行间隙 cy）
+            if (cy < N - 1 && dist[cy + 1][cx] < 0) {
+                const gy = cy;
+                if (!((cx < ANCH && hw[gy][cx] > 0) || (cx > 0 && hw[gy][cx - 1] > 0))) {
+                    if (atGoalXY(p.goal, cx, cy + 1)) return d;
+                    dist[cy + 1][cx] = d;
+                    q[tail++] = (cy + 1) * N + cx;
+                }
+            }
+            // 左（列间隙 cx-1，v 锚 (·,cy)/(·,cy-1)）
+            if (cx > 0 && dist[cy][cx - 1] < 0) {
+                const gx = cx - 1;
+                if (!((cy < ANCH && vw[cy][gx] > 0) || (cy > 0 && vw[cy - 1][gx] > 0))) {
+                    if (atGoalXY(p.goal, cx - 1, cy)) return d;
+                    dist[cy][cx - 1] = d;
+                    q[tail++] = cy * N + (cx - 1);
+                }
+            }
+            // 右（列间隙 cx）
+            if (cx < N - 1 && dist[cy][cx + 1] < 0) {
+                const gx = cx;
+                if (!((cy < ANCH && vw[cy][gx] > 0) || (cy > 0 && vw[cy - 1][gx] > 0))) {
+                    if (atGoalXY(p.goal, cx + 1, cy)) return d;
+                    dist[cy][cx + 1] = d;
+                    q[tail++] = cy * N + (cx + 1);
+                }
+            }
+        }
+        return Infinity;
+    }
+
+    /** goal 判定（坐标版，BFS 内联用，避免构造对象） */
+    function atGoalXY(goal, x, y) {
+        switch (goal) {
+            case 'N': return y === 0;
+            case 'S': return y === N - 1;
+            case 'E': return x === N - 1;
+            case 'W': return x === 0;
         }
         return false;
     }
 
     /**
-     * 玩家从当前位置到目标边的最短步数（忽略其它棋子，只考虑墙）。
-     * 不可达返回 Infinity。
+     * 玩家 pi 的一条最短路径（忽略其它棋子）。
+     * 返回 [{x,y}, ...]（含起点与终点格）；不可达返回 null。
+     * 供 UI 画"最短路径可视化"。BFS 从目标边反向回溯。
      */
-    function distanceToGoal(st, pi) {
+    function shortestPath(st, pi) {
         const p = st.players[pi];
-        if (atGoal(p, p.pos)) return 0;
+        const px = p.pos.x, py = p.pos.y;
+        if (atGoalXY(p.goal, px, py)) return [{ x: px, y: py }];
+        const hw = st.hw, vw = st.vw;
+        // dist: 从起点出发的步数；prev: BFS 树父节点（用于回溯）
         const dist = Array.from({ length: N }, () => new Array(N).fill(-1));
-        const queue = [[p.pos.x, p.pos.y]];
-        dist[p.pos.y][p.pos.x] = 0;
-        let head = 0;
-        while (head < queue.length) {
-            const [cx, cy] = queue[head++];
-            const d = dist[cy][cx];
-            for (const dir of DIRS) {
-                const nx = cx + dir.dx, ny = cy + dir.dy;
-                if (!inBoard(nx, ny)) continue;
-                if (dist[ny][nx] !== -1) continue;
-                if (wallBetween(st, { x: cx, y: cy }, { x: nx, y: ny })) continue;
-                if (atGoal(p, { x: nx, y: ny })) return d + 1;
-                dist[ny][nx] = d + 1;
-                queue.push([nx, ny]);
+        const prev = Array.from({ length: N }, () => new Array(N).fill(null));
+        const q = [];
+        q.push([px, py]);
+        dist[py][px] = 0;
+        let head = 0, goalCell = null;
+        while (head < q.length && !goalCell) {
+            const [cx, cy] = q[head++];
+            const d = dist[cy][cx] + 1;
+            const tryStep = (nx, ny, wall) => {
+                if (wall || dist[ny][nx] >= 0) return false;
+                dist[ny][nx] = d;
+                prev[ny][nx] = [cx, cy];
+                if (atGoalXY(p.goal, nx, ny)) { goalCell = [nx, ny]; return true; }
+                q.push([nx, ny]);
+                return false;
+            };
+            // 四方向（与 distanceToGoal 相同的墙检查；边界先判，防止 hw/vw 越界）
+            if (cy > 0) {
+                const gy = cy - 1;
+                tryStep(cx, cy - 1, (cx < ANCH && hw[gy][cx] > 0) || (cx > 0 && hw[gy][cx - 1] > 0));
+                if (goalCell) break;
+            }
+            if (cy < N - 1) {
+                const gy = cy;
+                tryStep(cx, cy + 1, (cx < ANCH && hw[gy][cx] > 0) || (cx > 0 && hw[gy][cx - 1] > 0));
+                if (goalCell) break;
+            }
+            if (cx > 0) {
+                const gx = cx - 1;
+                tryStep(cx - 1, cy, (cy < ANCH && vw[cy][gx] > 0) || (cy > 0 && vw[cy - 1][gx] > 0));
+                if (goalCell) break;
+            }
+            if (cx < N - 1) {
+                const gx = cx;
+                tryStep(cx + 1, cy, (cy < ANCH && vw[cy][gx] > 0) || (cy > 0 && vw[cy - 1][gx] > 0));
+                if (goalCell) break;
             }
         }
-        return Infinity;
+        if (!goalCell) return null;
+        const path = [];
+        let cur = goalCell;
+        while (cur) {
+            path.push({ x: cur[0], y: cur[1] });
+            cur = prev[cur[1]][cur[0]];
+        }
+        path.reverse();
+        return path;
     }
 
     /** 所有玩家是否都仍能到达各自目标边（忽略棋子） */
@@ -368,7 +474,7 @@ var QRules = (function () {
         createGame,
         inBoard, inAnchor,
         wallBetween, wallConflicts, wallOwner,
-        distanceToGoal, allReachable, atGoal,
+        distanceToGoal, allReachable, atGoal, shortestPath,
         legalMoves, canPlaceWall, legalWalls,
         applyMove, applyWall, undoLast,
         cellName, wallName, moveDesc

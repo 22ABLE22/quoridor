@@ -28,6 +28,25 @@ var QApp = (function () {
 
     /* ---------------- drawing ---------------- */
 
+    let pathCache = { key: null, paths: null };   // recompute only when the position changes
+
+    function computePaths() {
+        if (!st || st.winner !== null || !QUI.showPaths) return null;
+        // cache key: pawn positions + wall grids + player list identity
+        const key = JSON.stringify([
+            st.players.map(p => [p.id, p.pos.x, p.pos.y]),
+            st.hw, st.vw
+        ]);
+        if (pathCache.key === key) return pathCache.paths;
+        const paths = [];
+        for (const p of st.players) {
+            const cells = QRules.shortestPath(st, p.id);
+            if (cells && cells.length > 1) paths.push({ color: p.color, cells });
+        }
+        pathCache = { key, paths };
+        return paths;
+    }
+
     function redraw() {
         if (!st) return;
         const humanTurn = st.winner === null && st.players[st.turn].type === 'human';
@@ -36,6 +55,7 @@ var QApp = (function () {
         QRender.draw(st, {
             hoverCell, hoverWall,
             legalCells,
+            paths: computePaths(),
             currentPi: st.winner === null ? st.turn : st.winner,
             lastMove: lastRec && lastRec.type === 'move' ? lastRec : null,
             lastWall: lastRec && lastRec.type === 'wall' ? lastRec : null
@@ -131,6 +151,14 @@ var QApp = (function () {
         }
     }
 
+    /** Show the AI's last search stats in the status bar (thinking insight). */
+    function showAIStats(pName, pColor, stats) {
+        if (!stats) return;
+        const nodes = stats.nodes >= 1000 ? (stats.nodes / 1000).toFixed(1) + 'k' : stats.nodes;
+        QUI.setStatus('<b style="color:' + pColor + '">' + esc(pName) + '</b> (AI) · depth <b>' + stats.depth + '</b> · eval <b>' +
+            (stats.score > 0 ? '+' : '') + stats.score + '</b> · ' + nodes + ' nodes · ' + stats.ms + 'ms');
+    }
+
     function updateButtons() {
         undoBtn.disabled = !st || st.history.length === 0;
     }
@@ -192,6 +220,7 @@ var QApp = (function () {
         hoverCell = hoverWall = null;
         gameEpoch++;
         winRates = null;
+        pathCache = { key: null, paths: null };   // position changed
         refreshUI();
         if (st.winner !== null) {
             setTimeout(() => QUI.showWin(st), 600);
@@ -222,6 +251,9 @@ var QApp = (function () {
                 } else {
                     QRules.applyWall(st, pi, action.wall.x, action.wall.y, action.wall.isH);
                 }
+                // show what the AI was thinking before the next status overwrite
+                const mover = st.players[pi];
+                showAIStats(mover.name, mover.color, action.stats);
                 afterAction();
             };
             // Prefer the worker (deep search off the main thread); fall back
@@ -258,6 +290,7 @@ var QApp = (function () {
         QUI.showToast('Undid ' + n + ' move' + (n > 1 ? 's' : ''));
         gameEpoch++;
         winRates = null;
+        pathCache = { key: null, paths: null };
         refreshUI();
         scheduleAI();
         refreshWinRates();
@@ -333,6 +366,7 @@ var QApp = (function () {
         hoverCell = hoverWall = null;
         gameEpoch++;
         winRates = null;
+        pathCache = { key: null, paths: null };
         refreshUI();
         scheduleAI();
         refreshWinRates();
@@ -345,6 +379,7 @@ var QApp = (function () {
         hoverCell = hoverWall = null;
         gameEpoch++;
         winRates = null;
+        pathCache = { key: null, paths: null };
         refreshUI();
         scheduleAI();
         refreshWinRates();

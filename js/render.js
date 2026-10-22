@@ -66,7 +66,12 @@ var QRender = (function () {
 
     /* ---------------- theme colors ---------------- */
     let theme = {};
+    let themeCache = { mode: null, valid: false };
     function readTheme() {
+        // Cache: only re-read the CSS variables when the theme mode changes
+        // (or on first draw). Hover-triggered redraws skip getComputedStyle.
+        const mode = document.documentElement.dataset.theme || 'auto';
+        if (themeCache.valid && themeCache.mode === mode) return theme;
         const cs = getComputedStyle(document.documentElement);
         const v = name => cs.getPropertyValue(name).trim();
         theme = {
@@ -83,6 +88,8 @@ var QRender = (function () {
             muted: v('--muted'),
             brand: v('--brand')
         };
+        themeCache = { mode, valid: true };
+        return theme;
     }
 
     /* ---------------- main draw ---------------- */
@@ -92,7 +99,8 @@ var QRender = (function () {
      * @param st game state
      * @param opts {
      *   hoverCell, hoverWall {x,y,isH,legal}, legalCells [],
-     *   lastMove {from,to} | lastWall {x,y,isH}, currentPi, winPi
+     *   lastMove {from,to} | lastWall {x,y,isH}, currentPi, winPi,
+     *   paths []  (optional) shortest paths per player [{color, cells:[{x,y}]}]
      * }
      */
     function draw(st, opts) {
@@ -145,6 +153,10 @@ var QRender = (function () {
             ctx.lineTo(gp, sizeCss - PAD - GROOVE / 3);
             ctx.stroke();
         }
+
+        // Shortest-path overlays — above cells/grooves, beneath walls & pawns
+        // (drawn AFTER the opaque cell fill, otherwise it would be hidden)
+        if (opts.paths) drawPaths(opts.paths);
 
         // Placed walls — colored by the player who placed them
         for (let y = 0; y < QRules.ANCH; y++) {
@@ -216,6 +228,30 @@ var QRender = (function () {
     }
 
     /* ---------------- sub-draws ---------------- */
+
+    /**
+     * Shortest-path overlays: each player's current best route as a soft
+     * dashed polyline in their color (drawn beneath pawns and walls).
+     */
+    function drawPaths(paths) {
+        ctx.save();
+        ctx.lineWidth = 3;
+        for (const p of paths) {
+            if (!p.cells || p.cells.length < 2) continue;
+            ctx.strokeStyle = withAlpha(p.color, 0.35);
+            ctx.setLineDash([7, 6]);
+            ctx.beginPath();
+            const first = cellRect(p.cells[0].x, p.cells[0].y);
+            ctx.moveTo(first.cx, first.cy);
+            for (let i = 1; i < p.cells.length; i++) {
+                const r = cellRect(p.cells[i].x, p.cells[i].y);
+                ctx.lineTo(r.cx, r.cy);
+            }
+            ctx.stroke();
+        }
+        ctx.setLineDash([]);
+        ctx.restore();
+    }
 
     function drawGoalEdge(st, pi, sizeCss) {
         if (pi == null || !st.players[pi]) return;
@@ -417,6 +453,17 @@ var QRender = (function () {
 
     /* ---------------- DPI handling ---------------- */
 
+    /** Force the theme cache to refresh on the next draw (system scheme flip). */
+    function invalidateTheme() {
+        themeCache.valid = false;
+    }
+    if (window.matchMedia) {
+        const mq = window.matchMedia('(prefers-color-scheme: dark)');
+        const onScheme = () => { invalidateTheme(); };
+        if (mq.addEventListener) mq.addEventListener('change', onScheme);
+        else if (mq.addListener) mq.addListener(onScheme);
+    }
+
     function resize(cssSize) {
         const dpr = Math.min(2, window.devicePixelRatio || 1);
         board._dpr = dpr;
@@ -431,6 +478,7 @@ var QRender = (function () {
         board, ctx, draw, resize,
         cellRect, hWallCenter, vWallCenter, wallCenter,
         pixelToCell, pixelToWall,
+        invalidateTheme,
         get CELL() { return CELL; }, get GROOVE() { return GROOVE; }, get PAD() { return PAD; },
         readTheme
     };

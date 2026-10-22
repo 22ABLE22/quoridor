@@ -24,7 +24,8 @@
  * ========================================================================= */
 var QAI = (function () {
 
-    const WIN = 100000;
+    const WIN = 29000;              // fits Int16 with room for mate-ply adjustment
+    const MATE_START = 28000;       // scores >= this encode mate-in-N via (WIN - ply)
     const MAX_CAND_2P = 26;     // candidate cap per node, 2-player
     const MAX_CAND_NP = 18;     // candidate cap per node, 3+ players
     const MAX_DEPTH_2P = 9;     // iterative-deepening ceiling, 2-player
@@ -86,14 +87,19 @@ var QAI = (function () {
         let h = 0 >>> 0;
         for (let y = 0; y < QRules.ANCH; y++) {
             for (let x = 0; x < QRules.ANCH; x++) {
-                if (st.hw[y][x]) h = (h ^ zob.h[y][x]) >>> 0;
-                if (st.vw[y][x]) h = (h ^ zob.v[y][x]) >>> 0;
+                const hv = st.hw[y][x];
+                if (hv) h = (h ^ (zob.h[y][x] + (hv << 20)) >>> 0) >>> 0;   // owner folded in
+                const vv = st.vw[y][x];
+                if (vv) h = (h ^ (zob.v[y][x] + (vv << 20)) >>> 0) >>> 0;
             }
         }
         for (const p of st.players) {
             h = (h ^ zob.pos[p.id][p.pos.y * QRules.N + p.pos.x]) >>> 0;
+            // wall stock matters: same layout with different remaining walls
+            // is a different position (walls are spendable resources)
+            h = (h ^ ((0x8FCD2A9 * (p.id + 3)) * (p.walls + 1))) >>> 0;
         }
-        // side-to-move matters (wall counts are folded in cheaply via turn)
+        // side to move
         h = (h ^ (0x9E3779B9 * (st.turn + 1))) >>> 0;
         return h >>> 0;
     }
@@ -104,9 +110,10 @@ var QAI = (function () {
         if (ttDepth[idx] < depth) return null;
         const score = ttScore[idx];
         const flag = ttFlag[idx];
-        if (flag === 1) return { score, move: ttMove[idx] };
-        if (flag === 2 && score > alpha) return { score, move: ttMove[idx] };       // lower bound
-        if (flag === 3 && score < beta) return { score, move: ttMove[idx] };        // upper bound
+        // Only fully-contained bounds can answer directly (marked exact).
+        if (flag === 1) return { score, move: ttMove[idx], exact: true };
+        if (flag === 2 && score > alpha) return { score: alpha, move: ttMove[idx], exact: false };  // lower bound usable as alpha cutoff only
+        if (flag === 3 && score < beta) return { score: beta, move: ttMove[idx], exact: false };    // upper bound usable as beta cutoff only
         return null;
     }
 
@@ -138,9 +145,11 @@ var QAI = (function () {
         const moves = QRules.legalMoves(st, mover);
         const baseD = QRules.distanceToGoal(st, mover);
         for (const m of moves) {
-            const tmp = clone(st);
-            tmp.players[mover].pos = { x: m.x, y: m.y };
-            const d = QRules.distanceToGoal(tmp, mover);
+            // evaluate the move in place (apply/undo) — no clone
+            const px = st.players[mover].pos.x, py = st.players[mover].pos.y;
+            st.players[mover].pos = { x: m.x, y: m.y };
+            const d = QRules.distanceToGoal(st, mover);
+            st.players[mover].pos = { x: px, y: py };
             list.push({ kind: 'move', target: m, gain: (baseD - d) * 2 + (QRules.atGoal(st.players[mover], m) ? 100 : 0) });
         }
         if (st.players[mover].walls > 0) {
@@ -149,14 +158,18 @@ var QAI = (function () {
             for (const w of walls) {
                 if (QRules.wallConflicts(st, w.x, w.y, w.isH)) continue;
                 if (timeUp()) { searchAborted = true; break; }   // clock check in the wall scan
-                const tmp = clone(st);
-                if (w.isH) tmp.hw[w.y][w.x] = 1; else tmp.vw[w.y][w.x] = 1;
-                if (!QRules.allReachable(tmp)) continue;
+                // evaluate the wall in place (apply/undo) — no clone
+                if (w.isH) st.hw[w.y][w.x] = mover + 1; else st.vw[w.y][w.x] = mover + 1;
+                if (!QRules.allReachable(st)) {
+                    if (w.isH) st.hw[w.y][w.x] = 0; else st.vw[w.y][w.x] = 0;
+                    continue;
+                }
                 let gain = 0;
                 for (let i = 0; i < st.players.length; i++) {
-                    const delta = QRules.distanceToGoal(tmp, i) - base[i];
+                    const delta = QRules.distanceToGoal(st, i) - base[i];
                     gain += (i === mover) ? -1.5 * delta : 2 * delta;
                 }
+                if (w.isH) st.hw[w.y][w.x] = 0; else st.vw[w.y][w.x] = 0;
                 list.push({ kind: 'wall', wall: w, gain });
             }
         }
@@ -280,13 +293,16 @@ var QAI = (function () {
 
     /* ---------------- evaluation ---------------- */
 
-    /** Leaf evaluation (larger is better for rootPi). */
-    function evalLeaf(st, rootPi) {
+    /**
+     * Leaf evaluation (larger is better for rootPi).
+     * Mate scores encode ply via (WIN - ply) so shallower wins score higher.
+     */
+    function evalLeaf(st, rootPi, ply) {
         if (st.winner !== null) {
-            return st.winner === rootPi ? WIN - st.history.length : -WIN + st.history.length;
+            return st.winner === rootPi ? WIN - ply : -(WIN - ply);
         }
         const myD = QRules.distanceToGoal(st, rootPi);
-        if (!isFinite(myD)) return -WIN;
+        if (!isFinite(myD)) return -(WIN - ply);
         let value = 0;
         for (let i = 0; i < st.players.length; i++) {
             if (i === rootPi) continue;
@@ -302,6 +318,7 @@ var QAI = (function () {
     /* ---------------- search ---------------- */
 
     let searchAborted = false;
+    let nodeCount = 0;
 
     function applyCand(st, c) {
         if (c.kind === 'move') {
@@ -310,26 +327,32 @@ var QAI = (function () {
             if (QRules.atGoal(p, p.pos)) st.winner = st.turn;
             else st.turn = (st.turn + 1) % st.players.length;
         } else {
-            if (c.wall.isH) st.hw[c.wall.y][c.wall.x] = 1;
-            else st.vw[c.wall.y][c.wall.x] = 1;
+            if (c.wall.isH) st.hw[c.wall.y][c.wall.x] = st.turn + 1;
+            else st.vw[c.wall.y][c.wall.x] = st.turn + 1;
             st.players[st.turn].walls--;
             st.turn = (st.turn + 1) % st.players.length;
         }
     }
 
     function search(st, rootPi, depth, alpha, beta, ply) {
-        if (st.winner !== null) return evalLeaf(st, rootPi);
-        if (depth === 0) return evalLeaf(st, rootPi);
+        if (st.winner !== null) return evalLeaf(st, rootPi, ply);
+        if (depth === 0) return evalLeaf(st, rootPi, ply);
         if ((ply & 3) === 0 && timeUp()) { searchAborted = true; return 0; }
+        nodeCount++;
 
         const hash = hashState(st);
         const alphaOrig = alpha;
+        // Exact TT hits answer directly — no node expansion at all.
+        // Bound-only hits (lower/upper) are NOT returned: using them as
+        // hard cutoffs is unsound in this ply-mate setup, so they only
+        // contribute their stored move for ordering.
         const probe = ttProbe(hash, depth, alpha, beta);
+        if (probe && probe.exact) return probe.score;
         let ttBest = probe ? probe.move : null;
 
         const mover = st.turn;
         const cands = candidates(st, mover, ttBest);
-        if (!cands.length) return evalLeaf(st, rootPi);
+        if (!cands.length) return evalLeaf(st, rootPi, ply);
         const maximizing = (mover === rootPi);
         let best = maximizing ? -Infinity : Infinity;
         let bestMove = null;
@@ -351,8 +374,13 @@ var QAI = (function () {
             if (beta <= alpha) break;
         }
         if (!searchAborted) {
-            const flag = best <= alphaOrig ? 3 : (best >= beta ? 2 : 1);
-            ttStore(hash, depth, best, flag, bestMove);
+            // Mate scores are ply-relative; storing them directly would lie
+            // when the same position is reached at a different ply.
+            const isMate = best > MATE_START || best < -MATE_START;
+            if (!isMate) {
+                const flag = best <= alphaOrig ? 3 : (best >= beta ? 2 : 1);
+                ttStore(hash, depth, best, flag, bestMove);
+            }
         }
         return best;
     }
@@ -383,12 +411,15 @@ var QAI = (function () {
     /**
      * Decide with iterative deepening under a time budget (ms).
      * Returns the best action; always answers within the budget.
+     * The returned action may carry `stats` = { depth, score, nodes, ms }.
      */
     function decide(st, pi, budgetMs) {
         if (st.winner !== null) return null;
         const budget = Math.max(30, Math.min(budgetMs || 2400, 2900));
-        deadline = Date.now() + budget;
+        const t0 = Date.now();
+        deadline = t0 + budget;
         searchAborted = false;
+        nodeCount = 0;
         if (!zob) initZobrist();
         ttClear();
 
@@ -401,25 +432,17 @@ var QAI = (function () {
         const maxDepth = st.players.length === 2 ? MAX_DEPTH_2P : MAX_DEPTH_NP;
         let bestAction = null;
         let completedDepth = 0;
+        let bestScore = 0;
+        let prevBest = null;   // PV from the previous iteration, searched first
         for (let depth = 2; depth <= maxDepth; depth++) {
-            const cands = candidates(st, pi, null);
+            const cands = candidates(st, pi, prevBest);
             if (!cands.length) break;
             let iterBest = null, iterBestScore = -Infinity;
             let alpha = -Infinity;
             let aborted = false;
             for (const c of cands) {
                 const snapshot = snap(st);
-                // apply candidate for the root mover directly
-                if (c.kind === 'move') {
-                    st.players[pi].pos = { x: c.target.x, y: c.target.y };
-                    if (QRules.atGoal(st.players[pi], st.players[pi].pos)) st.winner = pi;
-                    else st.turn = (pi + 1) % st.players.length;
-                } else {
-                    if (c.wall.isH) st.hw[c.wall.y][c.wall.x] = 1;
-                    else st.vw[c.wall.y][c.wall.x] = 1;
-                    st.players[pi].walls--;
-                    st.turn = (pi + 1) % st.players.length;
-                }
+                applyCand(st, c);
                 const v = search(st, pi, depth - 1, alpha, Infinity, 1);
                 restore(st, snapshot);
                 if (searchAborted) { aborted = true; break; }
@@ -430,8 +453,10 @@ var QAI = (function () {
             }
             if (aborted) break;
             bestAction = iterBest;
+            bestScore = iterBestScore;
             completedDepth = depth;
-            if (iterBestScore >= WIN / 2) break;    // forced win found
+            prevBest = iterBest;   // search the previous best first next iteration
+            if (iterBestScore >= MATE_START) break;    // forced win found
             if (timeUp()) break;
         }
         if (!bestAction) {
@@ -439,9 +464,16 @@ var QAI = (function () {
             if (moves.length) return { type: 'move', target: moves[0] };
             return null;
         }
-        return bestAction.kind === 'move'
+        const result = bestAction.kind === 'move'
             ? { type: 'move', target: bestAction.target }
             : { type: 'wall', wall: bestAction.wall };
+        result.stats = {
+            depth: completedDepth,
+            score: Math.round(bestScore * 10) / 10,
+            nodes: nodeCount,
+            ms: Date.now() - t0
+        };
+        return result;
     }
 
     /* ---------------- Monte-Carlo win rate ---------------- */
@@ -514,13 +546,14 @@ var QAI = (function () {
                 const base = st.players.map((_, i) => QRules.distanceToGoal(st, i));
                 let best = null, bestGain = 0.5;
                 for (const w of walls) {
-                    const tmp = clone(st);
-                    if (w.isH) tmp.hw[w.y][w.x] = 1; else tmp.vw[w.y][w.x] = 1;
+                    // evaluate in place (apply/undo) — no clone
+                    if (w.isH) st.hw[w.y][w.x] = mover + 1; else st.vw[w.y][w.x] = mover + 1;
                     let gain = 0;
                     for (let i = 0; i < st.players.length; i++) {
-                        const delta = QRules.distanceToGoal(tmp, i) - base[i];
+                        const delta = QRules.distanceToGoal(st, i) - base[i];
                         gain += (i === mover) ? -1.5 * delta : 2 * delta;
                     }
+                    if (w.isH) st.hw[w.y][w.x] = 0; else st.vw[w.y][w.x] = 0;
                     if (gain > bestGain) {
                         bestGain = gain; best = w;
                         if (gain >= 4) break;
@@ -532,10 +565,11 @@ var QAI = (function () {
         // otherwise: race (ties broken randomly so mirror games diverge)
         let bestD = Infinity;
         const bests = [];
+        const px = me.pos.x, py = me.pos.y;
         for (const m of moves) {
-            const tmp = clone(st);
-            tmp.players[mover].pos = { x: m.x, y: m.y };
-            const d = QRules.distanceToGoal(tmp, mover);
+            me.pos = { x: m.x, y: m.y };           // in place, no clone
+            const d = QRules.distanceToGoal(st, mover);
+            me.pos = { x: px, y: py };
             if (d < bestD) { bestD = d; bests.length = 0; bests.push(m); }
             else if (d === bestD) bests.push(m);
         }

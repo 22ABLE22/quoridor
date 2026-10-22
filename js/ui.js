@@ -40,6 +40,7 @@ var QUI = (function () {
     const winOverlay = document.getElementById('winOverlay');
     const toastEl = document.getElementById('toast');
     const winRateBtn = document.getElementById('winRateBtn');
+    const pathsBtn = document.getElementById('pathsBtn');
 
     /* ---------------- win-rate toggle ---------------- */
     const WR_KEY = 'quoridor.winrate';
@@ -57,6 +58,23 @@ var QUI = (function () {
         showWinRate = !showWinRate;
         try { localStorage.setItem(WR_KEY, showWinRate ? '1' : '0'); } catch (e) { /* ignore */ }
         applyWinRatePref();
+        document.dispatchEvent(new Event('quoridor:redraw'));
+    });
+
+    /* ---------------- shortest-path toggle ---------------- */
+    const PATHS_KEY = 'quoridor.paths';
+    function readPathsPref() {
+        try { return localStorage.getItem(PATHS_KEY) !== '0'; } catch (e) { return true; }
+    }
+    let showPaths = readPathsPref();
+    function applyPathsPref() {
+        pathsBtn.setAttribute('aria-pressed', showPaths);
+    }
+    pathsBtn.addEventListener('click', () => {
+        showPaths = !showPaths;
+        try { localStorage.setItem(PATHS_KEY, showPaths ? '1' : '0'); } catch (e) { /* ignore */ }
+        applyPathsPref();
+        document.dispatchEvent(new Event('quoridor:redraw'));
     });
 
     /* ---------------- status bar ---------------- */
@@ -175,13 +193,15 @@ var QUI = (function () {
 
     /* ---------------- public ---------------- */
     applyWinRatePref();
+    applyPathsPref();
     return {
         themeBtn, statusBar, playersList, historyList,
-        setupOverlay, winOverlay, winRateBtn,
+        setupOverlay, winOverlay, winRateBtn, pathsBtn,
         setStatus, renderPlayers, renderHistory,
         showSetup, hideSetup, showWin, hideWin,
         showToast,
-        get showWinRate() { return showWinRate; }
+        get showWinRate() { return showWinRate; },
+        get showPaths() { return showPaths; }
     };
 })();
 

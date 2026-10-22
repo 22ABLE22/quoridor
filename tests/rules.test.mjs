@@ -326,5 +326,41 @@ function ok(cond, msg) {
     ok(walls.some(w => w.isH) && walls.some(w => !w.isH), 'both orientations present');
 }
 
+// ================= shortestPath =================
+{
+    const g = QRules.createGame(2, [{ type: 'human' }, { type: 'human' }]);
+    const p0 = QRules.shortestPath(g, 0);
+    ok(Array.isArray(p0) && p0.length === 9, 'Red start has a 9-cell shortest path');
+    ok(p0[0].x === 4 && p0[0].y === 8 && p0[8].y === 0, 'path runs from start to the goal edge');
+    // consecutive cells must be adjacent and wall-free
+    let adjacent = true;
+    for (let i = 1; i < p0.length; i++) {
+        const a = p0[i - 1], b = p0[i];
+        if (Math.abs(a.x - b.x) + Math.abs(a.y - b.y) !== 1) adjacent = false;
+        if (QRules.wallBetween(g, a, b)) adjacent = false;
+    }
+    ok(adjacent, 'path steps are orthogonal and unblocked');
+    // a wall on the direct route lengthens it
+    QRules.applyWall(g, 0, 4, 7, true);   // blocks the straight column
+    const p1 = QRules.shortestPath(g, 0);
+    ok(p1.length > 9, 'path detours around the wall (' + p1.length + ' cells)');
+    ok(QRules.shortestPath(g, 0).length - 1 === QRules.distanceToGoal(g, 0), 'path length matches distanceToGoal');
+}
+
+// ================= decide(): stats + mate preference =================
+{
+    const g = QRules.createGame(2, [{ type: 'ai' }, { type: 'ai' }]);
+    const act = QAI.decide(g, 0, 400);
+    ok(act && act.stats, 'decide returns search stats');
+    ok(act.stats.depth >= 2, 'completed depth at least 2 (' + act.stats.depth + ')');
+    ok(act.stats.nodes > 0, 'node count reported');
+    ok(act.stats.ms <= 2500, 'reported time within budget (' + act.stats.ms + 'ms)');
+    // one move from victory → immediate winning move (no search needed)
+    g.players[0].pos = { x: 4, y: 1 };
+    g.turn = 0;
+    const now = QAI.decide(g, 0, 400);
+    ok(now.type === 'move' && now.target.y === 0, 'one-step win is taken immediately');
+}
+
 console.log(`\n${passed} assertions passed ✓`);
 if (process.exitCode) console.error('there were failures');

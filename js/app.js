@@ -272,6 +272,35 @@ var QApp = (function () {
         renderSeatRows();
     });
 
+    /* ---------------- dismiss modals without starting a game ----------------
+     * Clicking the dim backdrop (or pressing Esc) cancels the setup modal and
+     * returns to the game in progress. A finished game goes back to the result
+     * modal (Rematch stays reachable). With no game created yet, the setup
+     * modal stays — there is nothing to return to. */
+    function cancelSetup() {
+        if (!st) return;
+        QUI.hideSetup();
+        if (st.winner !== null) QUI.showWin(st);
+        refreshUI();
+        scheduleAI();
+    }
+    setupOverlay.addEventListener('click', (e) => {
+        if (e.target !== setupOverlay) return;   // only the backdrop itself
+        cancelSetup();
+    });
+    winOverlay.addEventListener('click', (e) => {
+        if (e.target !== winOverlay) return;
+        QUI.hideWin();
+        refreshUI();
+    });
+    document.addEventListener('keydown', (e) => {
+        if (e.key !== 'Escape') return;
+        const tag = (e.target && e.target.tagName) || '';
+        if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+        if (!setupOverlay.classList.contains('hidden')) cancelSetup();
+        else if (!winOverlay.classList.contains('hidden')) { QUI.hideWin(); refreshUI(); }
+    });
+
     /* ---------------- theme change redraws ---------------- */
     document.addEventListener('quoridor:redraw', redraw);
     if (window.matchMedia) {

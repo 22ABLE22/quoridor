@@ -32,11 +32,10 @@ zero dependencies, no build step; open `index.html` and play.
 - **Game aids**: live shortest-distance counters, last-move trail,
   undo (rolls back through AI replies to your previous action), full
   move history
-- **Strong single AI**: iterative-deepening principal-variation search with
-  aspiration windows, a Zobrist-hashed transposition table, killers and history
-  ordering, time management (~2.4 s budget per move,
-  hard-capped under 3 s), relevant-wall pruning, and paranoid multi-opponent
-  search for 3+ players — it sees jump tactics and wall counterplay. Two
+- **Strong single AI**: iterative-deepening alpha-beta with a Zobrist-hashed
+  transposition table, time management (~2.4 s budget per move, hard-capped
+  under 3 s), relevant-wall pruning, and paranoid multi-opponent search for 3+
+  players — it sees jump tactics and wall counterplay. Two
   **Web Workers** share one inlined engine source: a "thinker" runs the search
   and a separate "sampler" estimates win rates, so a long search can never
   delay the bars. Under `file://` (no workers) both fall back to synchronous
@@ -104,17 +103,15 @@ tests/e2e-browser.js          # browser check for the win-rate bars (run manuall
   player's shortest path. The transposition table uses a generation stamp
   instead of a per-move clear, and stores mate scores ply-normalized so a
   bound hit stays valid at any ply
-- Search uses root-relative MAX/MIN principal-variation search: maximizing
-  nodes scout alpha, minimizing nodes scout beta. Finite root bounds keep scout
-  windows valid. TT bounds are classified against the original alpha and beta;
-  packed moves preserve all pawn coordinates, including row/column 8. The TT
-  move has priority over ordinary move ordering. Late move reductions are
-  disabled pending independent tactical validation
-- Evaluation and candidate coverage match the earlier `8fffbff` engine. The
-  evaluation is scaled by 100 to preserve its fractional terms in the integer
-  TT: route differences weigh 100/140/220 as an opponent approaches its goal,
-  and a wall in hand weighs 30. Search improvements are validated separately
-  from evaluation changes, rather than retuning weights to a self-play result
+- Packed transposition-table moves reserve four bits per coordinate. The board
+  has coordinates `0..8`, so a three-bit field silently decoded moves to row or
+  column 8 as a different cell; the wider field keeps every pawn move intact
+- Search is plain iterative-deepening alpha-beta over a max/min tree. A
+  principal-variation rewrite with aspiration windows was measured at 34% over
+  32 games against this engine (about 96% of individual moves were identical,
+  so the loss came from the remaining tactical disagreements), and it was
+  reverted. Deeper search is not evidence of better play: the reverted version
+  reached the same depth in the same time and still played worse
 - Win rates come from one Monte-Carlo batch that credits every player from
   the same sample set, so the bars are mutually consistent and the cost is
   paid once per position rather than once per player
@@ -128,21 +125,24 @@ tests/e2e-browser.js          # browser check for the win-rate bars (run manuall
 
 ```text
 node tests/rules.test.mjs
-node tests/search.test.mjs    # fixed-depth PVS/TT versus plain alpha-beta
+node tests/search.test.mjs    # transposition-table move packing
 node bench/match.js --a js/ai.js --b <other-engine.js> --games 48 --budget 200
 node tests/e2e-browser.js      # needs Edge or Chrome; skips if neither is found
 ```
 
-`tests/search.test.mjs` compares fixed-depth PVS and TT results with plain
-alpha-beta on identical candidate trees for both two- and four-player positions.
-It also checks every pawn coordinate survives move packing and search restores
-its input position. This is a correctness check, not a strength claim.
+`tests/search.test.mjs` checks that every pawn destination and every wall anchor
+survives the transposition table's move packing without collision, and that the
+engine still returns a legal action without mutating the caller's position. It
+was written after a three-bit coordinate field silently mangled moves to row and
+column 8; reintroducing that field makes the test fail.
 
 `bench/match.js` plays two engine builds with colours alternated. Repeated
 openings and timing-dependent searches are correlated, so its nominal binomial
-interval is only descriptive; it must not be interpreted as proof of stronger
-play. More depth, more walls spent, and a short self-play winning streak are
-not substitutes for tactical validation and testing at the actual move budget.
+interval is only descriptive. Use it to compare builds, not to certify one: a
+principal-variation rewrite here scored 34% over 32 games against the engine it
+replaced while searching to the same depth in the same time, and it was
+reverted. Depth reached and walls spent are efficiency observations, not
+strength evidence.
 
 Browser smoke test: open `index.html?autotest=1` — it skips the setup modal
 and starts an AI vs AI game.

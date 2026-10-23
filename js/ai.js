@@ -35,9 +35,6 @@ var QAI = (function () {
     const MAX_CAND_NP = 18;     // candidate cap per node, 3+ players
     const MAX_DEPTH_2P = 9;     // iterative-deepening ceiling, 2-player
     const MAX_DEPTH_NP = 6;     // ceiling, 3+ players
-    const MAX_PLY = 40;         // killers/history table depth
-    const ASPIRATION = 140;     // first aspiration window (eval units, 1 step ≈ 1)
-    const LMR = false;           // late move reductions
 
     const N = QRules.N;
     const ANCH = QRules.ANCH;
@@ -402,28 +399,31 @@ var QAI = (function () {
 
     /* ---------------- evaluation ---------------- */
 
-    // Same evaluation as 8fffbff, scaled by 100 for integer TT/PVS scores.
-    // Search correctness is tested separately from evaluation changes.
+    /**
+     * Leaf evaluation (larger is better for rootPi).
+     * Mate scores encode ply via (WIN - ply) so shallower wins score higher.
+     */
     function evalLeaf(st, rootPi, ply) {
-        if (st.winner !== null) return st.winner === rootPi ? WIN - ply : -(WIN - ply);
+        if (st.winner !== null) {
+            return st.winner === rootPi ? WIN - ply : -(WIN - ply);
+        }
         const myD = QRules.distanceToGoal(st, rootPi);
         if (!isFinite(myD)) return -(WIN - ply);
+        const myWalls = st.players[rootPi].walls;
         let value = 0;
         for (let i = 0; i < st.players.length; i++) {
             if (i === rootPi) continue;
             const od = QRules.distanceToGoal(st, i);
             if (!isFinite(od)) { value += WIN / 2; continue; }
-            const urgency = od <= 2 ? 220 : od <= 4 ? 140 : 100;
+            const urgency = od <= 2 ? 2.2 : od <= 4 ? 1.4 : 1.0;
             value += (od - myD) * urgency;
-            value += (st.players[rootPi].walls - st.players[i].walls) * 30;
+            value += (myWalls - st.players[i].walls) * 0.3;
         }
         return value;
     }
 
     /* ---------------- search ---------------- */
 
-    let usePVS = true;
-    let useTT = true;
     let searchAborted = false;
     let nodeCount = 0;
 
@@ -464,8 +464,7 @@ var QAI = (function () {
 
         const hash = hashState(st);
         const alphaOrig = alpha;
-        const betaOrig = beta;
-        const probe = useTT ? ttProbe(hash, depth, alpha, beta, ply) : null;
+        const probe = ttProbe(hash, depth, alpha, beta, ply);
         if (probe && probe.cutoff) return probe.score;
         const ttBest = probe ? probe.move : null;
 
@@ -494,233 +493,11 @@ var QAI = (function () {
             }
             if (beta <= alpha) break;
         }
-        if (!searchAborted && useTT) {
-            const flag = best <= alphaOrig ? 3 : (best >= betaOrig ? 2 : 1);
+        if (!searchAborted) {
+            const flag = best <= alphaOrig ? 3 : (best >= beta ? 2 : 1);
             ttStore(hash, depth, best, flag, bestMove, ply);
         }
         return best;
-    }
-
-    /* ---------------- move ordering memory ---------------- */
-
-    // Killers: two moves per ply that recently caused a cutoff there. Tried right
-    // after the TT move, because a quiet move that refutes one sibling usually
-    // refutes the next.
-    const KILLERS = 2;
-    let killers = null;        // Int32Array(MaxPly * 2) of encoded moves
-    let history = null;        // Int32Array(WALL_SLOTS) — wall cutoffs by slot
-    let pawnHistory = null;    // Int32Array(N * N) — pawn-move cutoffs by destination
-
-    function initOrderingMemory() {
-        killers = new Int32Array(MAX_PLY * KILLERS);
-        history = new Int32Array(WALL_SLOTS);
-        pawnHistory = new Int32Array(N * N);
-    }
-
-    function resetOrderingMemory() {
-        killers.fill(0);
-        history.fill(0);
-        pawnHistory.fill(0);
-    }
-
-    /** Wall-slot index of a candidate (0..WALL_SLOTS-1), or -1 for a pawn move. */
-    function slotOf(c) {
-        if (c.kind === 'move') return -1;
-        return c.wall.isH ? wallIdxH(c.wall.x, c.wall.y) : wallIdxV(c.wall.x, c.wall.y);
-    }
-
-    function isKiller(code, ply) {
-        if (!code) return false;
-        const base = ply * KILLERS;
-        return killers[base] === code || killers[base + 1] === code;
-    }
-
-    function rememberKiller(code, ply) {
-        if (!code) return;
-        const base = ply * KILLERS;
-        if (killers[base] === code) return;
-        killers[base + 1] = killers[base];
-        killers[base] = code;
-    }
-
-    /**
-     * How promising a candidate looks before searching it. Pawn moves are ordered
-     * by the progress they make (already in `gain`); walls by whether they are a
-     * killer, then by cutoff history, then by their static gain. The sort is a
-     * stable insertion sort because these lists are short and already nearly
-     * ordered — Array.prototype.sort would allocate a comparator closure per node.
-     */
-    function orderCandidates(list, ply, preferred) {
-        for (let i = 1; i < list.length; i++) {
-            const c = list[i];
-            const key = orderKey(c, ply, preferred);
-            let j = i - 1;
-            while (j >= 0 && orderKey(list[j], ply, preferred) < key) {
-                list[j + 1] = list[j];
-                j--;
-            }
-            list[j + 1] = c;
-        }
-    }
-
-    function orderKey(c, ply, preferred) {
-        if (preferred && encodeMove(c) === encodeMove(preferred)) return 1e12;
-        if (c.kind === 'move') return c.gain * 1024 + pawnHistory[c.target.y * N + c.target.x] / 64;      // pawn steps first
-        const slot = slotOf(c);
-        const code = encodeMove(c);
-        if (isKiller(code, ply)) return 1e8 + c.gain;
-        return c.gain * 1024 + history[slot] / 64;
-    }
-
-    /* ---------------- root-relative MAX/MIN PVS ---------------- */
-    // Root player maximizes; all opponents minimize (paranoid multiplayer model).
-    // Scout windows follow the node direction: MAX tests alpha; MIN tests beta.
-    // Full finite root bounds keep each scout window valid. LMR is deliberately
-    // disabled until its tactical safety has independent regression coverage.
-    function pvs(st, rootPi, depth, alpha, beta, ply) {
-        if (st.winner !== null) return evalLeaf(st, rootPi, ply);
-        if (depth <= 0) return evalLeaf(st, rootPi, ply);
-        if ((ply & 7) === 0 && timeUp()) { searchAborted = true; return 0; }
-        nodeCount++;
-
-        const hash = hashState(st);
-        const alphaOrig = alpha;
-        const betaOrig = beta;
-        const isPV = (beta - alpha) > 1;
-        const probe = useTT ? ttProbe(hash, depth, alpha, beta, ply) : null;
-        if (probe && probe.cutoff) return probe.score;
-        const ttBest = probe ? probe.move : null;
-
-        const mover = st.turn;
-        const maximizing = (mover === rootPi);
-        const cands = candidates(st, mover, ttBest);
-        if (searchAborted) return 0;
-        if (!cands.length) return evalLeaf(st, rootPi, ply);
-        orderCandidates(cands, ply, ttBest);
-
-        // A maximizing node raises alpha, a minimizing node lowers beta; both are
-        // expressed here as the score that is good for the side we are scoring.
-        let best = maximizing ? -Infinity : Infinity;
-        let bestMove = null;
-        const fromX = st.players[mover].pos.x, fromY = st.players[mover].pos.y;
-        let first = true;
-
-        for (let ci = 0; ci < cands.length; ci++) {
-            const c = cands[ci];
-            applyCand(st, c, mover);
-
-            // The null window used to prove "this move is not better than the one
-            // before it" has to be placed on the correct side of the bound. This is
-            // a max/min tree, not a negamax tree: a MAXIMIZING node is trying to beat
-            // alpha, so its test window is (alpha, alpha+1); a MINIMIZING node is
-            // trying to undercut beta, so its test window is (beta-1, beta). Using
-            // the maximizing window at a minimizing node searches a range that cannot
-            // contain the answer, and the bound that comes back is wrong — the engine
-            // then plays moves the score does not support (in practice: it shuffles
-            // pawns backwards and the game never ends).
-            const testAlpha = maximizing ? alpha : beta - 1;
-            const testBeta = maximizing ? alpha + 1 : beta;
-            const improvesBound = maximizing;
-
-            let v;
-            if (first || !usePVS) {
-                v = pvs(st, rootPi, depth - 1, alpha, beta, ply + 1);
-                first = false;
-            } else {
-                // Late move reductions: deep in the list and deep in the tree, a wall
-                // is unlikely to be the move. Search it shallower on a null window and
-                // re-search properly if it surprises us.
-                let reduction = 0;
-                if (LMR && depth >= 3 && ci >= 3 && !isPV && c.kind === 'wall') {
-                    reduction = ci >= 10 ? 2 : 1;
-                    const slot = slotOf(c);
-                    if (history[slot] > 2000) reduction--;
-                }
-                if (reduction > 0) {
-                    v = pvs(st, rootPi, depth - 1 - reduction, testAlpha, testBeta, ply + 1);
-                    if ((improvesBound ? v > alpha : v < beta)) v = pvs(st, rootPi, depth - 1, testAlpha, testBeta, ply + 1);
-                } else {
-                    v = pvs(st, rootPi, depth - 1, testAlpha, testBeta, ply + 1);
-                }
-                if ((improvesBound ? v > alpha : v < beta)) {
-                    v = pvs(st, rootPi, depth - 1, alpha, beta, ply + 1);
-                }
-            }
-
-            undoCand(st, c, mover, fromX, fromY);
-            if (searchAborted) return 0;
-
-            if (maximizing) {
-                if (v > best) { best = v; bestMove = c; }
-                if (best > alpha) alpha = best;
-            } else {
-                if (v < best) { best = v; bestMove = c; }
-                if (best < beta) beta = best;
-            }
-            if (beta <= alpha) {
-                // Record the refutation so the next sibling at this ply tries it early.
-                if (c.kind === 'wall') {
-                    const slot = slotOf(c);
-                    if (history[slot] < 1e9) history[slot] += depth * depth;
-                    rememberKiller(encodeMove(c), ply);
-                } else {
-                    const cell = c.target.y * N + c.target.x;
-                    if (pawnHistory[cell] < 1e9) pawnHistory[cell] += depth * depth;
-                }
-                break;
-            }
-        }
-        if (!searchAborted && useTT) {
-            const flag = best <= alphaOrig ? 3 : (best >= betaOrig ? 2 : 1);
-            ttStore(hash, depth, best, flag, bestMove, ply);
-        }
-        return best;
-    }
-
-    /**
-     * Root search for one depth. Returns the score of the best move and leaves
-     * the chosen candidate in `out`.
-     *
-     * Two deliberate choices here:
-     *   - A move only replaces the best when it actually raises alpha. Every other
-     *     score came from a null window and is an upper bound; picking the largest
-     *     of several "at most" claims is how a root ends up choosing badly.
-     *   - The previous iteration's best is searched first, and a forced win ends
-     *     iterative deepening immediately.
-     */
-    function searchRoot(st, rootPi, depth, alpha, beta, out) {
-        const mover = st.turn;
-        const cands = candidates(st, mover, out.prevBest);
-        if (searchAborted || !cands.length) return { score: out.score, done: false };
-        orderCandidates(cands, 0, out.prevBest);
-
-        let bestScore = -Infinity;
-        let best = null;
-        const fromX = st.players[mover].pos.x, fromY = st.players[mover].pos.y;
-        let first = true;
-
-        for (let ci = 0; ci < cands.length; ci++) {
-            const c = cands[ci];
-            applyCand(st, c, mover);
-            let v;
-            if (first) {
-                v = pvs(st, rootPi, depth - 1, alpha, beta, 1);
-                first = false;
-            } else {
-                v = pvs(st, rootPi, depth - 1, alpha, alpha + 1, 1);
-                if (v > alpha && v < beta) v = pvs(st, rootPi, depth - 1, alpha, beta, 1);
-            }
-            undoCand(st, c, mover, fromX, fromY);
-            if (searchAborted) return { score: bestScore, done: false };
-
-            if (v > bestScore) bestScore = v;
-            if (v > alpha) {
-                alpha = v;
-                best = c;
-            }
-            if (alpha >= beta) break;
-        }
-        return { score: bestScore, best, done: true };
     }
 
     /**
@@ -730,17 +507,13 @@ var QAI = (function () {
      */
     function decide(st, pi, budgetMs) {
         if (st.winner !== null) return null;
-        st = clone(st);
-        st.turn = pi;
         const budget = Math.max(30, Math.min(budgetMs || 2400, 2900));
         const t0 = Date.now();
         deadline = t0 + budget;
         searchAborted = false;
         nodeCount = 0;
         if (!zob) initZobrist();
-        if (!killers) initOrderingMemory();
         ttNewSearch();
-        resetOrderingMemory();
 
         // Win now if possible.
         const moves = QRules.legalMoves(st, pi);
@@ -754,49 +527,36 @@ var QAI = (function () {
         let completedDepth = 0;
         let bestScore = 0;
         let prevBest = null;   // PV from the previous iteration, searched first
-        let hasScore = false;  // is bestScore a real score (for aspiration)?
+        const p = st.players[pi];
+        const fromX = p.pos.x, fromY = p.pos.y;
         // Callers normally pass pi === st.turn, but decide() is also usable as
         // "what would pi do here"; restoring the ORIGINAL turn keeps that
         // non-mutating in either case.
         const startTurn = st.turn;
-
         for (let depth = 2; depth <= maxDepth; depth++) {
-            // Aspiration windows: once the previous iteration's score is worth
-            // trusting, search a narrow band around it instead of the whole range.
-            // A score that falls outside means the guess was wrong, so widen and
-            // retry rather than trusting a bound as if it were a score.
-            let window = (hasScore && depth >= 4 && Math.abs(bestScore) < MATE_START) ? ASPIRATION : -1;
-            let out = { prevBest, score: bestScore };
-            let result = null;
-            if (window < 0) {
-                result = searchRoot(st, pi, depth, -32000, 32000, out);
-            } else {
-                for (let attempt = 0; attempt < 6; attempt++) {
-                    const alpha = bestScore - window;
-                    const beta = bestScore + window;
-                    out.prevBest = prevBest;
-                    result = searchRoot(st, pi, depth, alpha, beta, out);
-                    if (searchAborted || !result.done) break;
-                    if (result.score > alpha && result.score < beta) break;
-                    window *= 4;
-                    if (window > 4000) {
-                        result = searchRoot(st, pi, depth, -32000, 32000, out);
-                        break;
-                    }
-                }
+            const cands = candidates(st, pi, prevBest);
+            if (searchAborted || !cands.length) break;
+            let iterBest = null, iterBestScore = -Infinity;
+            let alpha = -Infinity;
+            let aborted = false;
+            for (const c of cands) {
+                applyCand(st, c, pi);
+                const v = search(st, pi, depth - 1, alpha, Infinity, 1);
+                undoCand(st, c, pi, fromX, fromY);
+                st.turn = startTurn;
+                if (searchAborted) { aborted = true; break; }
+                let score = v;
+                if (c.kind === 'wall') score -= 0.15;   // prefer moving when equal (save walls)
+                if (score > iterBestScore) { iterBestScore = score; iterBest = c; }
+                if (score > alpha) alpha = score;
             }
-            if (searchAborted || !result || !result.done) break;
-            if (!result.best) break;
-
-            bestAction = result.best;
-            bestScore = result.score;
+            if (aborted) break;
+            bestAction = iterBest;
+            bestScore = iterBestScore;
             completedDepth = depth;
-            hasScore = true;
-            prevBest = result.best;   // search the previous best first next iteration
-            if (bestScore >= MATE_START) break;    // forced win found
-            // Do not start a depth that clearly cannot finish; a half-searched
-            // iteration costs time and cannot improve on the previous answer.
-            if (Date.now() - t0 > budget / 2) break;
+            prevBest = iterBest;   // search the previous best first next iteration
+            if (iterBestScore >= MATE_START) break;    // forced win found
+            if (timeUp()) break;
         }
         if (!bestAction) {
             // fallback: first legal move

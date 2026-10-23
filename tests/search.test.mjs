@@ -1,52 +1,88 @@
-// Fixed-depth search correctness, not a timing/playing-style benchmark.
+// Transposition-table move packing regression.
+//
+// The board is 9x9, so pawn coordinates run 0..8. Packing once reserved three
+// bits per coordinate (0..7), which silently decoded moves to row or column 8 as
+// a different cell — the engine then lost its own best move from the table and
+// searched it later, or worse, in the wrong place. These checks pin the encoding.
 import fs from 'node:fs';
 import vm from 'node:vm';
 import assert from 'node:assert/strict';
+
 const rules = fs.readFileSync(new URL('../js/rules.js', import.meta.url), 'utf8');
 let source = fs.readFileSync(new URL('../js/ai.js', import.meta.url), 'utf8');
-// Expose internals only inside this isolated test VM; production API is unchanged.
-source = source.replace('decide, simulateWinRate, simulateWinRates, evalLeaf, clone', `
-    decide, simulateWinRate, simulateWinRates, evalLeaf, clone,
-    pack: encodeMove, unpack: decodeMove,
-    fixed(st, depth, optimized, cached) {
-        if (!zob) initZobrist();
-        if (!killers) initOrderingMemory();
-        resetOrderingMemory(); ttNewSearch();
-        deadline = Infinity; searchAborted = false; nodeCount = 0;
-        usePVS = optimized; useTT = cached;
-        const before = JSON.stringify(st);
-        const value = optimized ? pvs(st, st.turn, depth, -32000, 32000, 0)
-                                : search(st, st.turn, depth, -32000, 32000, 0);
-        if (before !== JSON.stringify(st)) throw Error('search mutated position');
-        return value;
-    }`);
+
+// Expose the private packers to the test only; the shipped API is unchanged.
+source = source.replace(
+    'decide, simulateWinRate, simulateWinRates, evalLeaf, clone',
+    'decide, simulateWinRate, simulateWinRates, evalLeaf, clone, __pack: encodeMove, __unpack: decodeMove'
+);
+
 const context = vm.createContext({ console, Math, Date, module: { exports: {} } });
-vm.runInContext(rules, context);
-vm.runInContext(source, context);
-const R = vm.runInContext('QRules', context);
-const A = vm.runInContext('QAI', context);
+vm.runInContext(rules, context, { filename: 'rules.js' });
+vm.runInContext(source, context, { filename: 'ai.js' });
+const QRules = vm.runInContext('QRules', context);
+const QAI = vm.runInContext('QAI', context);
+
 let checks = 0;
-// Every edge/corner coordinate must survive TT move packing.
-for (let y = 0; y < 9; y++) for (let x = 0; x < 9; x++) {
-    const move = A.unpack(A.pack({ kind: 'move', target: { x, y } }));
-    assert.equal(move.target.x, x); assert.equal(move.target.y, y); checks++;
+
+// 1. Every pawn destination on the board survives a pack/unpack round trip.
+for (let y = 0; y < QRules.N; y++) {
+    for (let x = 0; x < QRules.N; x++) {
+        const back = QAI.__unpack(QAI.__pack({ kind: 'move', target: { x, y } }));
+        assert.ok(back && back.kind === 'move', `pawn (${x},${y}) must decode as a move`);
+        assert.equal(back.target.x, x, `pawn column ${x} must survive packing`);
+        assert.equal(back.target.y, y, `pawn row ${y} must survive packing`);
+        checks++;
+    }
 }
-for (const mode of [2, 4]) {
-    const g = R.createGame(mode, Array.from({ length: mode }, () => ({ type: 'ai' })));
-    // Include both MAX/MIN root turns and nonempty wall layouts.
-    for (let position = 0; position < 4; position++) {
-        const exact = A.fixed(g, 3, false, false);
-        assert.equal(A.fixed(g, 3, true, false), exact, `PVS/reference mode=${mode} position=${position}`);
-        assert.equal(A.fixed(g, 3, true, true), exact, `PVS+TT/reference mode=${mode} position=${position}`);
-        assert.equal(A.fixed(g, 3, false, true), exact, `AB+TT/reference mode=${mode} position=${position}`);
-        checks += 3;
-        const moves = R.legalMoves(g, g.turn);
-        if (position % 2 === 0) R.applyMove(g, g.turn, moves[0]);
-        else {
-            const walls = R.legalWalls(g, g.turn);
-            const wall = walls[Math.floor(walls.length / 2)];
-            R.applyWall(g, g.turn, wall.x, wall.y, wall.isH);
+
+// 2. Wall anchors (0..7 on both axes) survive, in both orientations.
+for (let y = 0; y < QRules.ANCH; y++) {
+    for (let x = 0; x < QRules.ANCH; x++) {
+        for (const isH of [true, false]) {
+            const back = QAI.__unpack(QAI.__pack({ kind: 'wall', wall: { x, y, isH } }));
+            assert.ok(back && back.kind === 'wall', `wall (${x},${y}) must decode as a wall`);
+            assert.equal(back.wall.x, x);
+            assert.equal(back.wall.y, y);
+            assert.equal(back.wall.isH, isH);
+            checks++;
         }
     }
 }
-console.log(`${checks} fixed-depth/TT checks passed`);
+
+// 3. Distinct moves must not collide onto the same code.
+const seen = new Map();
+for (let y = 0; y < QRules.N; y++) {
+    for (let x = 0; x < QRules.N; x++) {
+        const code = QAI.__pack({ kind: 'move', target: { x, y } });
+        const key = `m${code}`;
+        assert.ok(!seen.has(key), `pawn code collision at (${x},${y}) with ${seen.get(key)}`);
+        seen.set(key, `(${x},${y})`);
+        checks++;
+    }
+}
+for (let y = 0; y < QRules.ANCH; y++) {
+    for (let x = 0; x < QRules.ANCH; x++) {
+        for (const isH of [true, false]) {
+            const code = QAI.__pack({ kind: 'wall', wall: { x, y, isH } });
+            const key = `w${code}`;
+            assert.ok(!seen.has(key), `wall code collision at (${x},${y},${isH}) with ${seen.get(key)}`);
+            seen.set(key, `wall(${x},${y},${isH})`);
+            checks++;
+        }
+    }
+}
+
+// 4. The engine still plays a legal move and leaves the caller's game untouched.
+{
+    const g = QRules.createGame(2, [{ type: 'ai' }, { type: 'ai' }]);
+    QRules.applyMove(g, 0, { x: 4, y: 7 });
+    const before = JSON.stringify({ p: g.players.map(p => p.pos), w: g.players.map(p => p.walls), h: g.hw, v: g.vw, t: g.turn, win: g.winner });
+    const act = QAI.decide(g, 1, 150);
+    const after = JSON.stringify({ p: g.players.map(p => p.pos), w: g.players.map(p => p.walls), h: g.hw, v: g.vw, t: g.turn, win: g.winner });
+    assert.equal(before, after, 'decide() must not mutate the caller state');
+    assert.ok(act && (act.type === 'move' || act.type === 'wall'), 'decide() returns an action');
+    checks++;
+}
+
+console.log(`${checks} move-packing checks passed`);

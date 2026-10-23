@@ -32,14 +32,15 @@ zero dependencies, no build step; open `index.html` and play.
 - **Game aids**: live shortest-distance counters, last-move trail,
   undo (rolls back through AI replies to your previous action), full
   move history
-- **Strong single AI**: iterative-deepening alpha-beta (up to 9 plies) with a
-  Zobrist-hashed transposition table, time management (~2.4 s budget per
-  move, hard-capped under 3 s), relevant-wall pruning, and paranoid
-  multi-opponent search for 3+ players — it sees jump tactics and wall
-  counterplay. Two **Web Workers** share one inlined engine source: a
-  "thinker" runs the search and a separate "sampler" estimates win rates, so
-  a long search can never delay the bars. Under `file://` (no workers) both
-  fall back to synchronous computation automatically.
+- **Strong single AI**: iterative-deepening principal-variation search with
+  aspiration windows, a Zobrist-hashed transposition table, killers and history
+  ordering, late move reductions, time management (~2.4 s budget per move,
+  hard-capped under 3 s), relevant-wall pruning, and paranoid multi-opponent
+  search for 3+ players — it sees jump tactics and wall counterplay. Two
+  **Web Workers** share one inlined engine source: a "thinker" runs the search
+  and a separate "sampler" estimates win rates, so a long search can never
+  delay the bars. Under `file://` (no workers) both fall back to synchronous
+  computation automatically.
 - Touch-friendly (Pointer Events: press to preview, release to act)
 
 ## About the game
@@ -80,14 +81,16 @@ Open the live site: <https://22able22.github.io/quoridor/>
 ```
 index.html        # page skeleton + theme CSS variables (data-theme)
 js/rules.js       # rules engine (pure logic, no DOM; Node-testable)
-js/ai.js          # iterative-deepening alpha-beta AI + win-rate simulator
+js/ai.js          # iterative-deepening PVS AI + win-rate simulator
 js/ai-worker.js   # Web Worker wrapper (engine sources inlined into a Blob)
 js/render.js      # canvas board rendering (DPI-aware, theme-aware)
 js/input.js       # pointer input (mouse + touch unified)
 js/ui.js          # theme cycling, player cards, animated win-rate bars, history, modals
 js/app.js         # controller (game lifecycle, AI scheduling, undo)
+bench/match.js    # head-to-head engine matches (how the AI changes were judged)
 tests/rules.test.mjs          # rules + AI regression tests (98 assertions)
 tests/worker-inline.check.js  # worker command-loop verification (run manually)
+tests/e2e-browser.js          # browser check for the win-rate bars (run manually)
 ```
 
 - Classic script tags, no bundler — works from `file://`
@@ -101,6 +104,16 @@ tests/worker-inline.check.js  # worker command-loop verification (run manually)
   player's shortest path. The transposition table uses a generation stamp
   instead of a per-move clear, and stores mate scores ply-normalized so a
   bound hit stays valid at any ply
+- Search is principal-variation (first move full window, the rest null-window
+  with a re-search on a surprise), wrapped in aspiration windows around the
+  previous iteration's score. Killers and a cutoff-history table reorder walls;
+  late move reductions search unlikely walls shallower and re-search anything
+  that beats alpha, so a wrong guess costs time rather than accuracy
+- Evaluation prices one step of route at 100, a wall in hand at 180 (a wall
+  spent well adds about two steps to the opponent) and the race verdict at 220,
+  decaying by 14 for every wall still in play. The verdict is scored explicitly
+  because the route difference alone cannot see a race at all: when both players
+  simply walk, every step shortens both routes and the difference never moves
 - Win rates come from one Monte-Carlo batch that credits every player from
   the same sample set, so the bars are mutually consistent and the cost is
   paid once per position rather than once per player
@@ -114,7 +127,14 @@ tests/worker-inline.check.js  # worker command-loop verification (run manually)
 
 ```text
 node tests/rules.test.mjs
+node bench/match.js --a js/ai.js --b <other-engine.js> --games 48 --budget 200
+node tests/e2e-browser.js      # needs Edge or Chrome; skips if neither is found
 ```
+
+`bench/match.js` is how the search and evaluation changes were judged: two engine
+builds play each other from a set of openings with colours alternated, and the
+score is reported with a 95% interval. A 24-game match cannot separate 58% from
+50% — the AI work in this repository was kept or reverted on 48-game results.
 
 Browser smoke test: open `index.html?autotest=1` — it skips the setup modal
 and starts an AI vs AI game.

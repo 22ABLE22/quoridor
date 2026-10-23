@@ -97,7 +97,10 @@
         .pc-dist b { color:var(--text); }
         .pc-row3 { display:flex; align-items:center; gap:7px; font-size:0.66rem; color:var(--muted); }
         .pc-winrate { display:block; flex:1 1 auto; height:7px; border-radius:4px; background:var(--line-soft); overflow:hidden; }
-        .pc-winrate-fill { display:block; height:100%; border-radius:4px; background:var(--pc,#888); width:0%; transition:width .5s ease; }
+        /* No CSS transition here: ui.js drives the width and the percentage
+           text from the same requestAnimationFrame tick so they stay in
+           lockstep (a CSS transition would desync the number from the bar). */
+        .pc-winrate-fill { display:block; height:100%; border-radius:4px; background:var(--pc,#888); width:0%; }
         .pc-winrate-txt { flex:0 0 auto; font-variant-numeric:tabular-nums; color:var(--text); font-weight:600; }
         .player-card.winrate-hidden .pc-row3 { display:none; }
         /* ---------------- history ---------------- */

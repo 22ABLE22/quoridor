@@ -64,7 +64,9 @@ var QApp = (function () {
 
     function refreshUI() {
         if (!st) return;
-        QUI.renderPlayers(st, QUI.showWinRate ? winRates : null);
+        // animate:false — a structural re-render (AI thinking, hover, undo)
+        // must not restart the bar animation or clear the numbers on screen.
+        QUI.renderPlayers(st, QUI.showWinRate ? winRates : null, false);
         QUI.renderHistory(st);
         updateStatus();
         updateButtons();
@@ -91,25 +93,45 @@ var QApp = (function () {
     /**
      * Update win-rate bars.
      *
-     * Computed SYNCHRONOUSLY on the main thread (deferred one tick so the
-     * board paints first). After the zero-allocation rewrite a full
-     * 120-rollout batch costs ~200 ms — far inside the interaction budget
-     * and immune to every Worker round-trip failure mode (queue starvation,
-     * boot fetch failures, stale-epoch races). The heavy AI search still
-     * runs in its own worker, so thinking never blocks the UI.
+     * One Monte-Carlo batch now yields every player's rate at once
+     * (simulateWinRates), so the cost is paid once per position instead of
+     * once per player. The batch runs in a dedicated sampler worker so a
+     * 4-player estimate can never freeze the board; the same worker source
+     * also serves the heavy AI search (separate instance, so a 2.4 s search
+     * can never starve a short sampling job).
+     *
+     * Results are applied through the wrEpoch guard: only the newest request
+     * wins. Until a new estimate lands, `winRates` keeps the previous array,
+     * so the cards keep showing the old bars instead of blanking out.
      */
     function refreshWinRates() {
         if (!st || st.winner !== null) return;
         if (!QUI.showWinRate) return;
         const epoch = ++wrEpoch;
         const snapshot = exportState();
+        const rollouts = st.players.length > 2 ? 96 : 160;
+        const apply = (rates) => {
+            if (epoch !== wrEpoch || !st || st.winner !== null) return;
+            winRates = rates;
+            QUI.renderPlayers(st, winRates);      // animates from what is shown
+        };
+        const computeSync = () => {
+            try { apply(QAI.simulateWinRates(snapshot, rollouts)); }
+            catch (e) { /* keep the previous bars */ }
+        };
+        // Defer one tick so the board paints (and the AI can start) first.
         setTimeout(() => {
             if (epoch !== wrEpoch || !st || st.winner !== null) return;
-            winRates = st.players.map((p, idx) => {
-                try { return QAI.simulateWinRate(snapshot, idx, 120); }
-                catch (e) { return null; }
-            });
-            QUI.renderPlayers(st, winRates);
+            if (AIWorkerHelper.available) {
+                AIWorkerHelper.winRates(snapshot, rollouts)
+                    .then(res => {
+                        if (res && res.rates) apply(res.rates);
+                        else computeSync();
+                    })
+                    .catch(computeSync);
+            } else {
+                computeSync();
+            }
         }, 0);
     }
 
@@ -199,7 +221,9 @@ var QApp = (function () {
     function afterAction() {
         hoverCell = hoverWall = null;
         gameEpoch++;
-        winRates = null;
+        // Deliberately KEEP winRates here: the previous estimate stays on
+        // screen while the AI thinks, then glides to the new numbers when
+        // refreshWinRates() lands. Clearing it would blank the bars.
         pathCache = { key: null, paths: null };   // position changed
         refreshUI();
         if (st.winner !== null) {
@@ -216,6 +240,8 @@ var QApp = (function () {
         if (!st || st.winner !== null) return;
         if (st.players[st.turn].type !== 'ai') return;
         aiThinking = true;
+        // Only the status line and buttons change here; the player cards keep
+        // the previous win-rate bars untouched while the AI thinks.
         updateStatus();
         updateButtons();
         const pi = st.turn;
@@ -269,7 +295,9 @@ var QApp = (function () {
         QUI.hideWin();
         QUI.showToast('Undid ' + n + ' move' + (n > 1 ? 's' : ''));
         gameEpoch++;
-        winRates = null;
+        // Undo rewinds the position: keep the current bars on screen and let
+        // the next estimate glide to the rewound value (QUI.resetWinRates()
+        // is only for a brand-new game).
         pathCache = { key: null, paths: null };
         refreshUI();
         scheduleAI();
@@ -346,6 +374,7 @@ var QApp = (function () {
         hoverCell = hoverWall = null;
         gameEpoch++;
         winRates = null;
+        QUI.resetWinRates();
         pathCache = { key: null, paths: null };
         refreshUI();
         scheduleAI();
@@ -359,6 +388,7 @@ var QApp = (function () {
         hoverCell = hoverWall = null;
         gameEpoch++;
         winRates = null;
+        QUI.resetWinRates();
         pathCache = { key: null, paths: null };
         refreshUI();
         scheduleAI();
@@ -451,6 +481,7 @@ var QApp = (function () {
                     { name: 'Red', type: 'ai' },
                     { name: 'Blue', type: 'ai' }
                 ]);
+                QUI.resetWinRates();
                 refreshUI();
                 scheduleAI();
                 refreshWinRates();

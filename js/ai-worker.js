@@ -1,6 +1,6 @@
 'use strict';
 /* =========================================================================
- * AIWorkerHelper — main-thread side of the AI Web Worker
+ * AIWorkerHelper — main-thread side of the AI Web Workers
  *
  * The worker source EMBEDS the full sources of js/rules.js and js/ai.js
  * (Blob-URL workers have an opaque origin, so sync-XHR / importScripts
@@ -9,20 +9,25 @@
  * case the helper reports unavailable and callers fall back to computing on
  * the main thread.
  *
- * Only the heavy AI search runs here ('decide', ~2.4 s per move), so the
- * UI never blocks while the AI thinks. Win-rate estimation is a short
- * ~200 ms synchronous batch and runs on the main thread (see app.js) —
- * that keeps it immune to worker boot/queue failures.
+ * TWO worker instances are built from the same source:
+ *   - "thinker" serves 'decide' (the ~2.4 s search). Keeping it alone means
+ *     the UI never blocks while the AI thinks.
+ *   - "sampler" serves 'winrate' (a short Monte-Carlo batch). It is separate
+ *     so a long search can never queue ahead of a sampling job — the failure
+ *     mode that once made the bars stay empty in PVE games.
  *
  * Protocol (request → response, both carry an id):
- *   → { id, cmd:'decide', state, pi, budgetMs }
+ *   → { id, cmd:'decide',  state, pi, budgetMs }
  *   ← { id, ok:true, action } | { id, ok:false, error }
+ *   → { id, cmd:'winrate', state, rollouts }
+ *   ← { id, ok:true, rates:[…] } | { id, ok:false, error }
  *
  * init() ALWAYS returns a Promise<boolean>.
  * ========================================================================= */
 var AIWorkerHelper = (function () {
 
-    let worker = null;
+    let thinker = null;
+    let sampler = null;
     let failed = false;
     let booting = null;
     let requestId = 0;
@@ -54,8 +59,8 @@ var AIWorkerHelper = (function () {
             '      var action = QAI.decide(msg.state, msg.pi, msg.budgetMs);',
             '      self.postMessage({ id: msg.id, ok: true, action: action });',
             '    } else if (msg.cmd === "winrate") {',
-            '      var rate = QAI.simulateWinRate(msg.state, msg.pi, msg.rollouts);',
-            '      self.postMessage({ id: msg.id, ok: true, rate: rate });',
+            '      var rates = QAI.simulateWinRates(msg.state, msg.rollouts);',
+            '      self.postMessage({ id: msg.id, ok: true, rates: rates });',
             '    }',
             '  } catch (err) {',
             '    self.postMessage({ id: msg.id, ok: false, error: String(err && err.message || err) });',
@@ -64,7 +69,7 @@ var AIWorkerHelper = (function () {
         ].join('\n');
     }
 
-    function attachWorker(src) {
+    function attachWorker(src, slot) {
         const w = new Worker(URL.createObjectURL(
             new Blob([src], { type: 'application/javascript' })));
         w.onmessage = (e) => {
@@ -82,23 +87,27 @@ var AIWorkerHelper = (function () {
                 pending.delete(id);
             }
             try { w.terminate(); } catch (e) { /* ignore */ }
-            worker = null;
-            failed = true;   // sync fallback from now on
+            if (slot === 'thinker') thinker = null; else sampler = null;
+            // A sampler failure only costs the off-main-thread optimisation;
+            // a thinker failure means every caller computes synchronously.
+            if (slot === 'thinker') failed = true;
         };
         return w;
     }
 
     /**
-     * Initialize the worker. Always resolves to boolean (true = ready).
+     * Initialize both workers. Always resolves to boolean (true = ready).
      * Concurrent calls share one boot.
      */
     function init() {
-        if (worker) return Promise.resolve(true);
+        if (thinker && sampler) return Promise.resolve(true);
         if (failed) return Promise.resolve(false);
         if (booting) return booting;
         booting = Promise.all([fetchText(scriptUrl('rules.js')), fetchText(scriptUrl('ai.js'))])
             .then(([rulesSrc, aiSrc]) => {
-                worker = attachWorker(buildWorkerSource(rulesSrc, aiSrc));
+                const src = buildWorkerSource(rulesSrc, aiSrc);
+                if (!thinker) thinker = attachWorker(src, 'thinker');
+                if (!sampler) sampler = attachWorker(src, 'sampler');
                 return true;
             })
             .catch(() => {
@@ -109,31 +118,37 @@ var AIWorkerHelper = (function () {
     }
 
     /**
-     * Send a command; resolves to the reply, or to null when the worker is
-     * unavailable (callers compute synchronously instead).
+     * Send a command to one worker slot; resolves to the reply, or to null
+     * when that worker is unavailable (callers compute synchronously).
      */
-    function send(cmd, state, extra) {
-        if (!worker || failed) return Promise.resolve(null);
+    function send(slot, cmd, state, extra) {
+        const w = slot === 'thinker' ? thinker : sampler;
+        if (!w) return Promise.resolve(null);
         const id = ++requestId;
         return new Promise((resolve, reject) => {
-            pending.set(id, { resolve, reject, worker, id });
+            pending.set(id, { resolve, reject, worker: w, id });
             try {
-                worker.postMessage(Object.assign({ id, cmd, state }, extra || {}));
+                w.postMessage(Object.assign({ id, cmd, state }, extra || {}));
             } catch (e) {
                 pending.delete(id);
-                failed = true;
+                if (slot === 'thinker') failed = true;
                 resolve(null);
             }
         });
     }
 
     function decide(state, pi, budgetMs) {
-        return send('decide', state, { pi, budgetMs });
+        return send('thinker', 'decide', state, { pi, budgetMs });
+    }
+
+    /** Estimate every player's win rate in the sampler worker. */
+    function winRates(state, rollouts) {
+        return send('sampler', 'winrate', state, { rollouts });
     }
 
     return {
-        init, decide,
-        get available() { return !!worker && !failed; }
+        init, decide, winRates,
+        get available() { return !!thinker && !failed; }
     };
 })();
 

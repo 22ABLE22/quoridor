@@ -1,0 +1,16 @@
+# Normalize all text files to LF in the repository and in the working tree.
+# Without this, a Windows clone with core.autocrlf=true checks files out as
+# CRLF and any tool that writes LF produces whole-file diff noise.
+* text=auto eol=lf
+
+# Binary assets (none today, but keep them safe if they are added).
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.zip binary

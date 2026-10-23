@@ -80,14 +80,108 @@ var QUI = (function () {
     /* ---------------- status bar ---------------- */
     function setStatus(html) { statusBar.innerHTML = html; }
 
+    /* ---------------- win-rate animation ---------------- */
+    /* Last *displayed* win rate per player position, and the latest estimate.
+     * Keeping them separate is what makes the bars feel continuous: while the
+     * AI thinks, app.js re-renders the cards with the previous winRates and
+     * the displayed values simply stay where they are; when a fresh estimate
+     * arrives the numbers ease from where they are to the new value instead
+     * of snapping or blanking out. */
+    let shownRates = [];        // player position → currently displayed percent
+    let targetRates = [];       // player position → latest estimate (0..1)
+    let animRaf = null;
+    const ANIM_MS = 460;        // a touch under half a second
+
+    /** smoothstep: slow at both ends, fast through the middle. */
+    function ease(t) { return t * t * (3 - 2 * t); }
+
+    function stopAnim() {
+        if (animRaf !== null) {
+            cancelAnimationFrame(animRaf);
+            animRaf = null;
+        }
+    }
+
+    function now() {
+        return (typeof performance !== 'undefined' ? performance : Date).now();
+    }
+
+    function paintCard(pidx, pct) {
+        const card = playersList.children[pidx];
+        if (!card) return;
+        const fill = card.querySelector('.pc-winrate-fill');
+        const txt = card.querySelector('.pc-winrate-txt');
+        if (!fill || !txt) return;
+        fill.style.width = pct + '%';
+        txt.textContent = Math.round(pct) + '%';
+    }
+
+    /**
+     * Animate every visible bar from its currently displayed value to
+     * targetRates. Both the fill width and the percentage text are driven
+     * from the same frame, so the number glides 51 → 52 → … → 72 with the
+     * bar instead of jumping ahead of it.
+     */
+    function animateRates() {
+        stopAnim();
+        const from = shownRates.slice();
+        const to = targetRates.map(v => (v == null || !isFinite(v)) ? null : v * 100);
+        const changed = to.some((v, i) => v != null && v !== from[i]);
+        if (!changed) return;
+        const reduced = window.matchMedia &&
+            window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        if (reduced || typeof requestAnimationFrame !== 'function') {
+            for (let i = 0; i < to.length; i++) {
+                if (to[i] == null) continue;
+                shownRates[i] = to[i];
+                paintCard(i, to[i]);
+            }
+            return;
+        }
+        const t0 = now();
+        const step = () => {
+            const t = Math.min(1, (now() - t0) / ANIM_MS);
+            const e = ease(t);
+            for (let i = 0; i < to.length; i++) {
+                if (to[i] == null) continue;
+                const a = (from[i] == null || !isFinite(from[i])) ? to[i] : from[i];
+                const v = a + (to[i] - a) * e;
+                shownRates[i] = v;
+                paintCard(i, v);
+            }
+            if (t < 1) animRaf = requestAnimationFrame(step);
+            else { animRaf = null; shownRates = to.slice(); }
+        };
+        animRaf = requestAnimationFrame(step);
+    }
+
+    /** Forget the animation history (new game / undo / player count change). */
+    function resetWinRates() {
+        stopAnim();
+        shownRates = [];
+        targetRates = [];
+    }
+
     /* ---------------- player cards ---------------- */
     /**
      * Render player cards. winRates is an optional array indexed by the
      * player's POSITION in st.players (not by seat id — seats can be skipped
      * with 'off', so id and array index may differ).
+     *
+     * `animate` (default true) eases the bars toward winRates. Pass false for
+     * structural re-renders that must not restart the animation — in
+     * particular the re-render while the AI is thinking, which must keep the
+     * previous numbers on screen untouched.
      */
-    function renderPlayers(st, winRates) {
+    function renderPlayers(st, winRates, animate) {
         playersList.innerHTML = '';
+        const rates = winRates || null;
+        // A new estimate arrives as a whole array: retarget, but keep the
+        // numbers currently on screen as the animation's starting point.
+        if (rates) {
+            targetRates = rates.slice();
+            if (shownRates.length !== st.players.length) shownRates = rates.map(v => v * 100);
+        }
         st.players.forEach((p, pidx) => {
             const card = document.createElement('div');
             card.className = 'player-card' +
@@ -124,15 +218,24 @@ var QUI = (function () {
             // win rate (indexed by player position, matching winRates)
             const fill = card.querySelector('.pc-winrate-fill');
             const txt = card.querySelector('.pc-winrate-txt');
-            const rate = winRates ? winRates[pidx] : null;
             if (st.winner === p.id) {
+                shownRates[pidx] = 100;
                 fill.style.width = '100%';
                 txt.textContent = '100%';
             } else if (st.winner !== null) {
+                shownRates[pidx] = 0;
                 fill.style.width = '0%';
                 txt.textContent = '0%';
-            } else if (rate != null && isFinite(rate)) {
-                const pct = Math.round(rate * 100);
+            } else if (shownRates[pidx] != null && isFinite(shownRates[pidx])) {
+                // Keep the number that is on screen right now; animateRates()
+                // below glides it toward the latest estimate.
+                const pct = Math.round(shownRates[pidx]);
+                fill.style.width = pct + '%';
+                txt.textContent = pct + '%';
+            } else if (rates && rates[pidx] != null && isFinite(rates[pidx])) {
+                // First estimate for this game: nothing to glide from.
+                shownRates[pidx] = rates[pidx] * 100;
+                const pct = Math.round(shownRates[pidx]);
                 fill.style.width = pct + '%';
                 txt.textContent = pct + '%';
             } else {
@@ -141,6 +244,7 @@ var QUI = (function () {
             }
             playersList.appendChild(card);
         });
+        if (rates && animate !== false) animateRates();
     }
 
     /* ---------------- history ---------------- */
@@ -198,7 +302,7 @@ var QUI = (function () {
     return {
         themeBtn, statusBar, playersList, historyList,
         setupOverlay, winOverlay, winRateBtn, pathsBtn,
-        setStatus, renderPlayers, renderHistory,
+        setStatus, renderPlayers, renderHistory, resetWinRates,
         showSetup, hideSetup, showWin, hideWin,
         showToast,
         get showWinRate() { return showWinRate; },

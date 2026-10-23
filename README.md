@@ -12,12 +12,16 @@ zero dependencies, no build step; open `index.html` and play.
   human against three AIs)
 - **Live win probability**: every player card carries a win-rate bar,
   estimated by Monte-Carlo simulation after each move and toggleable with
-  the **Win Rate** button (preference is remembered)
+  the **Win Rate** button (preference is remembered). While the AI is
+  thinking the previous bars stay on screen; a fresh estimate then eases the
+  number and the bar together over ~0.45 s (slow at both ends, fast in the
+  middle) instead of snapping or blanking out
 - **Three themes**: system (Auto) / Light / Dark, cycled with one button and
   remembered across visits
 - **Complete rules**: 9×9 board, two-cell walls, straight and diagonal jumps,
-  no double jumps in the 4-player game, walls may not overlap or cross,
-  and no wall may seal any player off from their goal (BFS reachability check)
+  no jumping over two pawns (any player count), walls may not overlap or
+  cross, and no wall may seal any player off from their goal (BFS
+  reachability check)
 - **Unified input**: no mode toggle — click a cell to move, click a groove to
   place a wall. The wall orientation follows the groove: hover along a row
   groove for a horizontal wall, along a column groove for a vertical wall.
@@ -32,9 +36,10 @@ zero dependencies, no build step; open `index.html` and play.
   Zobrist-hashed transposition table, time management (~2.4 s budget per
   move, hard-capped under 3 s), relevant-wall pruning, and paranoid
   multi-opponent search for 3+ players — it sees jump tactics and wall
-  counterplay. All search runs in a **Web Worker**, so the page stays
-  responsive while the AI thinks; under `file://` (no workers) it falls
-  back to a shorter synchronous search automatically.
+  counterplay. Two **Web Workers** share one inlined engine source: a
+  "thinker" runs the search and a separate "sampler" estimates win rates, so
+  a long search can never delay the bars. Under `file://` (no workers) both
+  fall back to synchronous computation automatically.
 - Touch-friendly (Pointer Events: press to preview, release to act)
 
 ## About the game
@@ -65,7 +70,8 @@ Open the live site: <https://22able22.github.io/quoridor/>
 4. When orthogonally adjacent to an opponent, jump straight over it; if the
    landing square is blocked by a wall, the board edge, or a third pawn,
    jump diagonally to either side instead
-5. In the 4-player game, jumping over two pawns at once is forbidden
+5. Jumping over two pawns at once is never allowed (any player count): a
+   straight jump needs a free landing square behind the single jumped pawn
 6. 2-player: 10 walls each · 4-player: 5 walls each; first to reach the
    opposite edge wins
 
@@ -78,17 +84,26 @@ js/ai.js          # iterative-deepening alpha-beta AI + win-rate simulator
 js/ai-worker.js   # Web Worker wrapper (engine sources inlined into a Blob)
 js/render.js      # canvas board rendering (DPI-aware, theme-aware)
 js/input.js       # pointer input (mouse + touch unified)
-js/ui.js          # theme cycling, player cards, win-rate bars, history, modals
+js/ui.js          # theme cycling, player cards, animated win-rate bars, history, modals
 js/app.js         # controller (game lifecycle, AI scheduling, undo)
-tests/rules.test.mjs          # rules + AI regression tests (82 assertions)
+tests/rules.test.mjs          # rules + AI regression tests (98 assertions)
 tests/worker-inline.check.js  # worker command-loop verification (run manually)
 ```
 
 - Classic script tags, no bundler — works from `file://`
 - The rules engine and AI are DOM-free: tests load them in a Node `vm` and
-  assert jumps (straight / diagonal / no double jump), wall conflicts
-  (overlap / crossing / T-touch), reachability (no sealing), undo
+  assert jumps (straight / diagonal / no jumping over two pawns), wall
+  conflicts (overlap / crossing / T-touch), reachability (no sealing), undo
   consistency, and that the AI places both wall orientations
+- Search pruning is sound, not heuristic: a wall is only tried when it blocks
+  an edge of some player's canonical shortest path, because a wall that
+  raises nobody's distance — or that seals somebody off — must block that
+  player's shortest path. The transposition table uses a generation stamp
+  instead of a per-move clear, and stores mate scores ply-normalized so a
+  bound hit stays valid at any ply
+- Win rates come from one Monte-Carlo batch that credits every player from
+  the same sample set, so the bars are mutually consistent and the cost is
+  paid once per position rather than once per player
 - Wall geometry: an h-wall at anchor (x,y) lies in the row groove between
   rows y and y+1 spanning columns x and x+1; a v-wall lies in the column
   groove between columns x and x+1 spanning rows y and y+1. Hit-testing

@@ -1,250 +1,321 @@
 <!DOCTYPE html>
 <html lang="en" data-theme="auto">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Quoridor — Wall Placement Game · 2 & 4 Players · PVP / PVE</title>
-    <meta name="description" content="Open-source web Quoridor: 2- or 4-player matches, any mix of human and AI seats, system/light/dark themes, zero dependencies.">
-    <style>
-        :root {
-            --bg:#f2f0ec; --card:#ffffff; --line:#e2ded6; --line-soft:#edeae3;
-            --text:#33302a; --muted:#8a857a; --brand:#b0622d; --green:#3d9970;
-            --h1:#241f18; --label:#5d5749; --hint:#b5afa2; --footer:#9d977f;
-            --btn-bg:#ffffff; --btn-border:#d8d2c6; --btn-text:#4a4438;
-            --btn-hover-bg:#faf8f4; --btn-hover-border:#c4bcae;
-            --btn-on-bg:#f7efe6; --btn-on-border:#d9b48f; --btn-on-text:#7a4a1d;
-            --input-bg:#ffffff; --input-border:#d8d2c6;
-            --board-bg:#3a3428; --board-edge:#241f16; --cell:#efe6d3; --cell-line:#dbd0b8;
-            --groove:#c9bda0; --wall:#7a4a26; --wall-edge:#4a2c14;
-            --goal-dim:0.7; --piece-ring:#fffdf8;
-            --hist-bg:#f8f5ef; --overlay:rgba(28,23,15,0.5);
-            --shadow:0 1px 3px rgba(60,50,30,0.08);
-        }
-        :root[data-theme="dark"] {
-            --bg:#14161a; --card:#1d2026; --line:#2c3038; --line-soft:#242830;
-            --text:#e2e0da; --muted:#8f948e; --brand:#d2965f; --green:#4dbd8a;
-            --h1:#f2efe8; --label:#a9a396; --hint:#5d5a50; --footer:#7d7a6e;
-            --btn-bg:#242830; --btn-border:#383d47; --btn-text:#cfd3ca;
-            --btn-hover-bg:#2a2f38; --btn-hover-border:#484e5a;
-            --btn-on-bg:#3a2d20; --btn-on-border:#8a6136; --btn-on-text:#e0b789;
-            --input-bg:#1a1e24; --input-border:#383d47;
-            --board-bg:#101318; --board-edge:#272c35; --cell:#2a313c; --cell-line:#3a4250;
-            --groove:#1c222b; --wall:#d8ab72; --wall-edge:#8a6136;
-            --goal-dim:0.75; --piece-ring:#0d0f13;
-            --hist-bg:#22262e; --overlay:rgba(4,6,10,0.66);
-            --shadow:0 1px 3px rgba(0,0,0,0.4);
-        }
-        @media (prefers-color-scheme: dark) { :root[data-theme="auto"] {
-            --bg:#14161a; --card:#1d2026; --line:#2c3038; --line-soft:#242830;
-            --text:#e2e0da; --muted:#8f948e; --brand:#d2965f; --green:#4dbd8a;
-            --h1:#f2efe8; --label:#a9a396; --hint:#5d5a50; --footer:#7d7a6e;
-            --btn-bg:#242830; --btn-border:#383d47; --btn-text:#cfd3ca;
-            --btn-hover-bg:#2a2f38; --btn-hover-border:#484e5a;
-            --btn-on-bg:#3a2d20; --btn-on-border:#8a6136; --btn-on-text:#e0b789;
-            --input-bg:#1a1e24; --input-border:#383d47;
-            --board-bg:#101318; --board-edge:#272c35; --cell:#2a313c; --cell-line:#3a4250;
-            --groove:#1c222b; --wall:#d8ab72; --wall-edge:#8a6136;
-            --goal-dim:0.75; --piece-ring:#0d0f13;
-            --hist-bg:#22262e; --overlay:rgba(4,6,10,0.66);
-            --shadow:0 1px 3px rgba(0,0,0,0.4);
-        } }
-        * { margin:0; padding:0; box-sizing:border-box; font-family:'Segoe UI',-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',Roboto,Helvetica,Arial,sans-serif; }
-        html, body { height:100%; }
-        body { background:var(--bg); color:var(--text); overflow:hidden; -webkit-font-smoothing:antialiased; }
-        .app { height:100vh; max-width:1280px; margin:0 auto; padding:12px 16px; display:flex; flex-direction:column; gap:10px; }
-        header { flex:0 0 auto; display:flex; align-items:baseline; justify-content:space-between; gap:16px; padding:10px 18px; background:var(--card); border:1px solid var(--line); border-radius:12px; box-shadow:var(--shadow); }
-        h1 { display:flex; align-items:center; gap:9px; font-size:1.12rem; font-weight:600; letter-spacing:-0.01em; color:var(--h1); }
-        h1 .logo { display:flex; align-items:center; justify-content:center; width:26px; height:26px; border-radius:8px; background:linear-gradient(135deg,#c98a4b,#6b3d1c); font-size:13px; line-height:1; }
-        .head-right { display:flex; align-items:baseline; flex-wrap:wrap; gap:14px; }
-        .subtitle { font-size:0.76rem; color:var(--muted); }
-        .btn-sm { padding:4px 10px; font-size:0.7rem; }
-        .main-layout { flex:1 1 auto; min-height:0; display:flex; gap:10px; }
-        .panel { display:flex; flex-direction:column; min-height:0; background:var(--card); border:1px solid var(--line); border-radius:12px; padding:12px; box-shadow:var(--shadow); }
-        .panel h2 { flex:0 0 auto; display:flex; align-items:center; gap:6px; margin-bottom:8px; font-size:0.68rem; font-weight:600; letter-spacing:0.07em; text-transform:uppercase; color:var(--muted); }
-        .sidebar { flex:0 0 340px; gap:9px; overflow-y:auto; overflow-x:hidden; }
-        .side-block { flex:0 0 auto; display:flex; flex-direction:column; min-height:0; }
-        .stage { flex:1 1 auto; min-width:0; }
-        .stage-head { flex:0 0 auto; display:flex; align-items:center; justify-content:space-between; gap:14px; margin-bottom:9px; flex-wrap:wrap; }
-        .stage-head h2 { margin-bottom:0; }
-        .stage-hint { font-size:0.74rem; color:var(--hint); }
-        .canvas-wrap { position:relative; flex:1 1 auto; min-height:0; display:flex; align-items:center; justify-content:center; }
-        .canvas-wrap canvas { display:block; border-radius:12px; touch-action:none; }
-        .status-bar { flex:0 0 auto; margin-top:9px; padding:8px 12px; font-size:0.84rem; color:var(--text); background:var(--hist-bg); border:1px solid var(--line-soft); border-radius:9px; text-align:center; min-height:36px; }
-        .status-bar b { font-weight:600; }
-        button { padding:8px 14px; font-size:0.8rem; font-weight:500; color:var(--btn-text); background:var(--btn-bg); border:1px solid var(--btn-border); border-radius:8px; cursor:pointer; box-shadow:0 1px 2px rgba(60,50,30,0.06); transition:background .15s,border-color .15s,color .15s,transform .06s; }
-        button:hover { background:var(--btn-hover-bg); border-color:var(--btn-hover-border); }
-        button:active { transform:translateY(1px); }
-        button:disabled { opacity:.45; cursor:not-allowed; }
-        button[aria-pressed="true"] { background:var(--btn-on-bg); border-color:var(--btn-on-border); color:var(--btn-on-text); }
-        button[aria-pressed="false"] { color:var(--muted); background:var(--btn-bg); }
-        button.primary { color:#fff; background:var(--brand); border-color:var(--brand); }
-        button.primary:hover { filter:brightness(1.08); background:var(--brand); }
-        .controls { display:flex; flex-wrap:wrap; gap:7px; }
-        .controls button { flex:1 1 auto; }
-        /* ---------------- player cards ---------------- */
-        .player-card { display:flex; flex-direction:column; gap:6px; padding:9px 11px; margin-bottom:7px; background:var(--hist-bg); border:1px solid var(--line-soft); border-radius:10px; border-left:4px solid transparent; transition:border-color .2s, box-shadow .2s; }
-        .player-card.turn { border-left-color:var(--pc,#888); box-shadow:0 0 0 1px var(--pc,#888) inset; }
-        .player-card.win { border-left-color:var(--pc,#888); box-shadow:0 0 0 2px var(--pc,#888) inset; }
-        .pc-row1 { display:flex; align-items:center; gap:8px; }
-        .pc-dot { width:13px; height:13px; border-radius:50%; background:var(--pc,#888); border:2px solid var(--piece-ring); flex:0 0 auto; }
-        .pc-name { font-size:0.86rem; font-weight:600; color:var(--h1); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-        .pc-tag { margin-left:auto; flex:0 0 auto; font-size:0.64rem; color:var(--muted); border:1px solid var(--line); border-radius:999px; padding:2px 8px; white-space:nowrap; }
-        .pc-row2 { display:flex; align-items:center; gap:8px; font-size:0.7rem; color:var(--muted); }
-        .pc-walls { display:flex; gap:3px; flex-wrap:wrap; }
-        .pc-wall { width:14px; height:6px; border-radius:2px; background:var(--wall); }
-        .pc-wall.used { background:var(--line); }
-        .pc-dist { margin-left:auto; font-variant-numeric:tabular-nums; }
-        .pc-dist b { color:var(--text); }
-        .pc-row3 { display:flex; align-items:center; gap:7px; font-size:0.66rem; color:var(--muted); }
-        .pc-winrate { display:block; flex:1 1 auto; height:7px; border-radius:4px; background:var(--line-soft); overflow:hidden; }
-        /* No CSS transition here: ui.js drives the width and the percentage
-           text from the same requestAnimationFrame tick so they stay in
-           lockstep (a CSS transition would desync the number from the bar). */
-        .pc-winrate-fill { display:block; height:100%; border-radius:4px; background:var(--pc,#888); width:0%; }
-        .pc-winrate-txt { flex:0 0 auto; font-variant-numeric:tabular-nums; color:var(--text); font-weight:600; }
-        .player-card.winrate-hidden .pc-row3 { display:none; }
-        /* ---------------- history ---------------- */
-        .history { max-height:180px; overflow-y:auto; display:flex; flex-direction:column; gap:3px; font-size:0.74rem; font-variant-numeric:tabular-nums; }
-        .hist-item { display:flex; gap:7px; padding:3px 8px; background:var(--hist-bg); border:1px solid var(--line-soft); border-radius:6px; color:var(--muted); }
-        .hist-item .no { flex:0 0 22px; color:var(--hint); }
-        .hist-item .who { flex:0 0 auto; font-weight:600; }
-        .hist-item .what { margin-left:auto; color:var(--text); }
-        .hist-empty { color:var(--hint); font-size:0.74rem; text-align:center; padding:8px 0; }
-        /* ---------------- modals ---------------- */
-        .overlay { position:fixed; inset:0; z-index:50; display:flex; align-items:center; justify-content:center; padding:18px; background:var(--overlay); backdrop-filter:blur(2px); }
-        .overlay.hidden, .hidden { display:none !important; }
-        .modal { width:min(560px, 100%); max-height:calc(100vh - 40px); overflow-y:auto; background:var(--card); border:1px solid var(--line); border-radius:14px; padding:20px 22px; box-shadow:0 18px 50px rgba(30,22,10,0.3); }
-        .modal h2 { margin:0 0 4px; font-size:1.05rem; color:var(--h1); letter-spacing:0; text-transform:none; }
-        .modal .sub { margin:0 0 14px; font-size:0.78rem; color:var(--muted); }
-        .field-group { display:flex; flex-direction:column; gap:6px; margin-bottom:14px; }
-        .field-group > label { font-size:0.75rem; color:var(--label); font-weight:600; }
-        .seg-row { display:flex; gap:7px; }
-        .seg-row button { flex:1 1 auto; }
-        .seat-row { display:flex; align-items:center; gap:8px; padding:8px 10px; margin-bottom:6px; background:var(--hist-bg); border:1px solid var(--line-soft); border-radius:10px; flex-wrap:wrap; }
-        .seat-row.off { opacity:.5; }
-        .seat-dot { width:12px; height:12px; border-radius:50%; border:2px solid var(--piece-ring); flex:0 0 auto; }
-        .seat-name { flex:1 1 90px; min-width:0; }
-        .seat-name input { width:100%; padding:5px 9px; font-size:0.8rem; color:var(--text); background:var(--input-bg); border:1px solid var(--input-border); border-radius:7px; }
-        .seat-name input:focus { outline:none; border-color:var(--brand); }
-        .seat-type { display:flex; gap:4px; flex:0 0 auto; }
-        .seat-type button { padding:4px 9px; font-size:0.7rem; }
-        .modal-actions { display:flex; gap:9px; margin-top:6px; }
-        .modal-actions button { flex:1 1 auto; padding:10px; font-size:0.86rem; }
-        .win-modal { text-align:center; }
-        .win-modal .crown { font-size:44px; line-height:1; margin-bottom:8px; }
-        .win-modal h2 { font-size:1.3rem; }
-        .win-modal .sub { margin-bottom:18px; }
-        .win-modal .crown, .win-modal h2 { color:var(--win-color,#111); }
-        /* ---------------- rules block ---------------- */
-        details.rules-block { border:1px solid var(--line-soft); border-radius:10px; padding:8px 12px; background:var(--hist-bg); }
-        details.rules-block summary { font-size:0.78rem; font-weight:600; color:var(--label); cursor:pointer; }
-        details.rules-block ol { margin:8px 0 2px; padding-left:20px; font-size:0.76rem; color:var(--muted); line-height:1.65; }
-        footer { flex:0 0 auto; text-align:center; font-size:0.69rem; color:var(--footer); }
-        .toast { position:fixed; top:16px; left:50%; z-index:999; padding:9px 20px; font-size:0.82rem; color:#fff; background:#3a3428; border-radius:9px; box-shadow:0 8px 24px rgba(30,22,10,0.25); transform:translateX(-50%) translateY(-300%); transition:transform .35s cubic-bezier(.34,1.4,.64,1); pointer-events:none; }
-        .toast.show { transform:translateX(-50%) translateY(0); }
-        .toast.error { background:#c0392b; }
-        @media (max-height:860px) { .app { padding:10px 14px; gap:8px; } .panel { padding:10px; } .panel h2 { margin-bottom:7px; } .history { max-height:120px; } }
-        @media (max-width:960px) { body { overflow:auto; } .app { height:auto; min-height:100vh; } .main-layout { flex-direction:column; } .sidebar { flex:0 0 auto; overflow:visible; } .canvas-wrap { height:min(92vw, 560px); } }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Quoridor — a free browser wall placement game for two to four players</title>
+<meta name="description" content="Play Quoridor in the browser for free. Two or four players, any mix of human and AI seats, a search engine that plans nine moves ahead, and live win rates. No account, no download.">
+<link rel="canonical" href="https://22able22.github.io/quoridor/">
+<meta name="theme-color" content="#f2f0ec" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#131209" media="(prefers-color-scheme: dark)">
+
+<meta property="og:type" content="website">
+<meta property="og:title" content="Quoridor — block the path, get there first">
+<meta property="og:description" content="A free browser Quoridor for two to four players. Play a friend on the same screen or take on an engine that searches nine moves deep.">
+<meta property="og:url" content="https://22able22.github.io/quoridor/">
+<meta property="og:image" content="https://22able22.github.io/quoridor/assets/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Quoridor — block the path, get there first">
+<meta name="twitter:description" content="A free browser Quoridor for two to four players, with an engine that searches nine moves deep.">
+<meta name="twitter:image" content="https://22able22.github.io/quoridor/assets/og.png">
+
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23241f18'/%3E%3Crect x='7' y='7' width='8' height='8' rx='1.5' fill='%23f2f0ec'/%3E%3Crect x='17' y='7' width='8' height='8' rx='1.5' fill='%23f2f0ec' opacity='.45'/%3E%3Crect x='7' y='17' width='8' height='8' rx='1.5' fill='%23f2f0ec' opacity='.45'/%3E%3Crect x='17' y='17' width='8' height='8' rx='1.5' fill='%239c5322'/%3E%3C/svg%3E">
+
+<link rel="preload" href="assets/fonts/manrope-latin-400.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="assets/css/app.css">
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "VideoGame",
+  "name": "Quoridor",
+  "url": "https://22able22.github.io/quoridor/",
+  "description": "A free browser implementation of Quoridor for two to four players with a search based AI.",
+  "genre": "Board game",
+  "gamePlatform": "Web browser",
+  "numberOfPlayers": "2-4",
+  "applicationCategory": "Game",
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+  "license": "https://opensource.org/licenses/MIT"
+}
+</script>
 </head>
 <body>
-<div class="app">
-    <header>
-        <h1><span class="logo">▦</span>Quoridor</h1>
-        <div class="head-right">
-            <span class="subtitle">Wall placement game</span>
-            <button id="themeBtn" type="button" class="btn-sm">🌗 Auto</button>
-        </div>
-    </header>
 
-    <div class="main-layout">
-        <div class="panel stage">
-            <div class="stage-head">
-                <h2>Board</h2>
-                <span class="stage-hint">Click a cell to move · click a groove to place a wall</span>
-            </div>
-            <div class="canvas-wrap"><canvas id="board" width="600" height="600"></canvas></div>
-            <div class="status-bar" id="statusBar">—</div>
-        </div>
+<a class="skip-link" href="#play">Skip to the board</a>
 
-        <aside class="panel sidebar">
-            <section class="side-block">
-                <h2>Players</h2>
-                <div id="playersList"></div>
-            </section>
-            <section class="side-block">
-                <h2>Actions</h2>
-                <div class="controls">
-                    <button id="undoBtn" type="button">↩ Undo</button>
-                    <button id="newGameBtn" type="button">⚙ New Game</button>
-                </div>
-            </section>
-            <section class="side-block">
-                <h2>Options</h2>
-                <div class="controls">
-                    <button id="winRateBtn" type="button" aria-pressed="true">📊 Win Rate</button>
-                    <button id="pathsBtn" type="button" aria-pressed="true">🛤 Paths</button>
-                </div>
-            </section>
-            <section class="side-block">
-                <h2>History</h2>
-                <div id="historyList" class="history"><div class="hist-empty">No moves yet</div></div>
-            </section>
-            <section class="side-block">
-                <h2>Help</h2>
-                <details class="rules-block">
-                    <summary>Rules at a glance</summary>
-                    <ol>
-                        <li>Reach the edge <b>opposite your start</b> to win. On your turn: move one square (orthogonally), or spend a wall.</li>
-                        <li>A wall spans two squares and sits in a groove between cells. It must not overlap or cross another wall.</li>
-                        <li>No wall may <b>seal any player off completely</b> — everyone must keep a path to their goal.</li>
-                        <li>When adjacent to an opponent you may <b>jump</b> straight over it; if that square is blocked by a wall, edge, or pawn, you may jump <b>diagonally</b> to its side instead.</li>
-                        <li>2-player: 10 walls each · 4-player: 5 walls each. First to reach the opposite edge wins.</li>
-                        <li>Walls are painted in the color of the player who placed them — read the map of blockades at a glance.</li>
-                        <li>Walls: hover along a row groove for a horizontal wall, along a column groove for a vertical one.</li>
-                    </ol>
-                </details>
-            </section>
-        </aside>
+<svg width="0" height="0" aria-hidden="true" focusable="false" style="position:absolute">
+  <symbol id="i-sun" viewBox="0 0 256 256"><path d="M120,40V16a8,8,0,0,1,16,0V40a8,8,0,0,1-16,0Zm72,88a64,64,0,1,1-64-64A64.07,64.07,0,0,1,192,128Zm-16,0a48,48,0,1,0-48,48A48.05,48.05,0,0,0,176,128ZM58.34,69.66A8,8,0,0,0,69.66,58.34l-16-16A8,8,0,0,0,42.34,53.66Zm0,116.68-16,16a8,8,0,0,0,11.32,11.32l16-16a8,8,0,0,0-11.32-11.32ZM192,72a8,8,0,0,0,5.66-2.34l16-16a8,8,0,0,0-11.32-11.32l-16,16A8,8,0,0,0,192,72Zm5.66,114.34a8,8,0,0,0-11.32,11.32l16,16a8,8,0,0,0,11.32-11.32ZM48,128a8,8,0,0,0-8-8H16a8,8,0,0,0,0,16H40A8,8,0,0,0,48,128Zm80,80a8,8,0,0,0-8,8v24a8,8,0,0,0,16,0V216A8,8,0,0,0,128,208Zm112-88H216a8,8,0,0,0,0,16h24a8,8,0,0,0,0-16Z"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 256 256"><path d="M233.54,142.23a8,8,0,0,0-8-2,88.08,88.08,0,0,1-109.8-109.8,8,8,0,0,0-10-10,104.84,104.84,0,0,0-52.91,37A104,104,0,0,0,136,224a103.09,103.09,0,0,0,62.52-20.88,104.84,104.84,0,0,0,37-52.91A8,8,0,0,0,233.54,142.23ZM188.9,190.34A88,88,0,0,1,65.66,67.11a89,89,0,0,1,31.4-26A106,106,0,0,0,96,56,104.11,104.11,0,0,0,200,160a106,106,0,0,0,14.92-1.06A89,89,0,0,1,188.9,190.34Z"/></symbol>
+  <symbol id="i-sun-horizon" viewBox="0 0 256 256"><path d="M240,152H199.55a73.54,73.54,0,0,0,.45-8,72,72,0,0,0-144,0,73.54,73.54,0,0,0,.45,8H16a8,8,0,0,0,0,16H240a8,8,0,0,0,0-16ZM72,144a56,56,0,1,1,111.41,8H72.59A56.13,56.13,0,0,1,72,144Zm144,56a8,8,0,0,1-8,8H48a8,8,0,0,1,0-16H208A8,8,0,0,1,216,200ZM72.84,43.58a8,8,0,0,1,14.32-7.16l8,16a8,8,0,0,1-14.32,7.16Zm-56,48.84a8,8,0,0,1,10.74-3.57l16,8a8,8,0,0,1-7.16,14.31l-16-8A8,8,0,0,1,16.84,92.42Zm192,15.16a8,8,0,0,1,3.58-10.73l16-8a8,8,0,1,1,7.16,14.31l-16,8a8,8,0,0,1-10.74-3.58Zm-48-55.16,8-16a8,8,0,0,1,14.32,7.16l-8,16a8,8,0,1,1-14.32-7.16Z"/></symbol>
+  <symbol id="i-arrow-right" viewBox="0 0 256 256"><path d="M221.66,133.66l-72,72a8,8,0,0,1-11.32-11.32L196.69,136H40a8,8,0,0,1,0-16H196.69L138.34,61.66a8,8,0,0,1,11.32-11.32l72,72A8,8,0,0,1,221.66,133.66Z"/></symbol>
+  <symbol id="i-arrow-up-right" viewBox="0 0 256 256"><path d="M200,64V168a8,8,0,0,1-16,0V83.31L69.66,197.66a8,8,0,0,1-11.32-11.32L172.69,72H88a8,8,0,0,1,0-16H192A8,8,0,0,1,200,64Z"/></symbol>
+  <symbol id="i-undo" viewBox="0 0 256 256"><path d="M224,128a96,96,0,0,1-94.71,96H128A95.38,95.38,0,0,1,62.1,197.8a8,8,0,0,1,11-11.63A80,80,0,1,0,71.43,71.39a3.07,3.07,0,0,1-.26.25L44.59,96H72a8,8,0,0,1,0,16H24a8,8,0,0,1-8-8V56a8,8,0,0,1,16,0V85.8L60.25,60A96,96,0,0,1,224,128Z"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 256 256"><path d="M128,80a48,48,0,1,0,48,48A48.05,48.05,0,0,0,128,80Zm0,80a32,32,0,1,1,32-32A32,32,0,0,1,128,160Zm109.94-52.79a8,8,0,0,0-3.89-5.4l-29.83-17-.12-33.62a8,8,0,0,0-2.83-6.08,111.91,111.91,0,0,0-36.72-20.67,8,8,0,0,0-6.46.59L128,41.85,97.88,25a8,8,0,0,0-6.47-.6A112.1,112.1,0,0,0,54.73,45.15a8,8,0,0,0-2.83,6.07l-.15,33.65-29.83,17a8,8,0,0,0-3.89,5.4,106.47,106.47,0,0,0,0,41.56,8,8,0,0,0,3.89,5.4l29.83,17,.12,33.62a8,8,0,0,0,2.83,6.08,111.91,111.91,0,0,0,36.72,20.67,8,8,0,0,0,6.46-.59L128,214.15,158.12,231a7.91,7.91,0,0,0,3.9,1,8.09,8.09,0,0,0,2.57-.42,112.1,112.1,0,0,0,36.68-20.73,8,8,0,0,0,2.83-6.07l.15-33.65,29.83-17a8,8,0,0,0,3.89-5.4A106.47,106.47,0,0,0,237.94,107.21Z"/></symbol>
+  <symbol id="i-chart-bar" viewBox="0 0 256 256"><path d="M224,200h-8V40a8,8,0,0,0-8-8H152a8,8,0,0,0-8,8V80H96a8,8,0,0,0-8,8v40H48a8,8,0,0,0-8,8v64H32a8,8,0,0,0,0,16H224a8,8,0,0,0,0-16ZM160,48h40V200H160ZM104,96h40V200H104ZM56,144H88v56H56Z"/></symbol>
+  <symbol id="i-path" viewBox="0 0 256 256"><path d="M200,168a32.06,32.06,0,0,0-31,24H72a32,32,0,0,1,0-64h96a40,40,0,0,0,0-80H72a8,8,0,0,0,0,16h96a24,24,0,0,1,0,48H72a48,48,0,0,0,0,96h97a32,32,0,1,0,31-40Zm0,48a16,16,0,1,1,16-16A16,16,0,0,1,200,216Z"/></symbol>
+  <symbol id="i-caret" viewBox="0 0 256 256"><path d="M213.66,101.66l-80,80a8,8,0,0,1-11.32,0l-80-80A8,8,0,0,1,53.66,90.34L128,164.69l74.34-74.35a8,8,0,0,1,11.32,11.32Z"/></symbol>
+  <symbol id="i-trophy" viewBox="0 0 256 256"><path d="M232,64H208V48a8,8,0,0,0-8-8H56a8,8,0,0,0-8,8V64H24A16,16,0,0,0,8,80V96a40,40,0,0,0,40,40h3.65A80.13,80.13,0,0,0,120,191.61V216H96a8,8,0,0,0,0,16h64a8,8,0,0,0,0-16H136V191.58c31.94-3.23,58.44-25.64,68.08-55.58H208a40,40,0,0,0,40-40V80A16,16,0,0,0,232,64ZM48,120A24,24,0,0,1,24,96V80H48v32q0,4,.39,8Zm144-8.9c0,35.52-29,64.64-64,64.9a64,64,0,0,1-64-64V56H192ZM232,96a24,24,0,0,1-24,24h-.5a81.81,81.81,0,0,0,.5-8.9V80h24Z"/></symbol>
+  <symbol id="i-question" viewBox="0 0 256 256"><path d="M140,180a12,12,0,1,1-12-12A12,12,0,0,1,140,180ZM128,72c-22.06,0-40,16.15-40,36v4a8,8,0,0,0,16,0v-4c0-11,10.77-20,24-20s24,9,24,20-10.77,20-24,20a8,8,0,0,0-8,8v8a8,8,0,0,0,16,0v-.72c18.24-3.35,32-17.9,32-35.28C168,88.15,150.06,72,128,72Zm104,56A104,104,0,1,1,128,24,104.11,104.11,0,0,1,232,128Zm-16,0a88,88,0,1,0-88,88A88.1,88.1,0,0,0,216,128Z"/></symbol>
+  <symbol id="i-list" viewBox="0 0 256 256"><path d="M88,64a8,8,0,0,1,8-8H216a8,8,0,0,1,0,16H96A8,8,0,0,1,88,64Zm128,56H96a8,8,0,0,0,0,16H216a8,8,0,0,0,0-16Zm0,64H96a8,8,0,0,0,0,16H216a8,8,0,0,0,0-16ZM56,56H40a8,8,0,0,0,0,16H56a8,8,0,0,0,0-16Zm0,64H40a8,8,0,0,0,0,16H56a8,8,0,0,0,0-16Zm0,64H40a8,8,0,0,0,0,16H56a8,8,0,0,0,0-16Z"/></symbol>
+  <symbol id="i-keyboard" viewBox="0 0 256 256"><path d="M224,48H32A16,16,0,0,0,16,64V192a16,16,0,0,0,16,16H224a16,16,0,0,0,16-16V64A16,16,0,0,0,224,48Zm0,144H32V64H224V192Zm-16-64a8,8,0,0,1-8,8H56a8,8,0,0,1,0-16H200A8,8,0,0,1,208,128Zm0-32a8,8,0,0,1-8,8H56a8,8,0,0,1,0-16H200A8,8,0,0,1,208,96ZM72,160a8,8,0,0,1-8,8H56a8,8,0,0,1,0-16h8A8,8,0,0,1,72,160Zm96,0a8,8,0,0,1-8,8H96a8,8,0,0,1,0-16h64A8,8,0,0,1,168,160Zm40,0a8,8,0,0,1-8,8h-8a8,8,0,0,1,0-16h8A8,8,0,0,1,208,160Z"/></symbol>
+  <symbol id="i-check" viewBox="0 0 256 256"><path d="M173.66,98.34a8,8,0,0,1,0,11.32l-56,56a8,8,0,0,1-11.32,0l-24-24a8,8,0,0,1,11.32-11.32L112,148.69l50.34-50.35A8,8,0,0,1,173.66,98.34ZM232,128A104,104,0,1,1,128,24,104.11,104.11,0,0,1,232,128Zm-16,0a88,88,0,1,0-88,88A88.1,88.1,0,0,0,216,128Z"/></symbol>
+  <symbol id="i-users" viewBox="0 0 256 256"><path d="M244.8,150.4a8,8,0,0,1-11.2-1.6A51.6,51.6,0,0,0,192,128a8,8,0,0,1-7.37-4.89,8,8,0,0,1,0-6.22A8,8,0,0,1,192,112a24,24,0,1,0-23.24-30,8,8,0,1,1-15.5-4A40,40,0,1,1,219,117.51a67.94,67.94,0,0,1,27.43,21.68A8,8,0,0,1,244.8,150.4ZM190.92,212a8,8,0,1,1-13.84,8,57,57,0,0,0-98.16,0,8,8,0,1,1-13.84-8,72.06,72.06,0,0,1,33.74-29.92,48,48,0,1,1,58.36,0A72.06,72.06,0,0,1,190.92,212ZM128,176a32,32,0,1,0-32-32A32,32,0,0,0,128,176ZM72,120a8,8,0,0,0-8-8A24,24,0,1,1,87.24,82a8,8,0,1,0,15.5-4A40,40,0,1,0,37,117.51,67.94,67.94,0,0,0,9.6,139.19a8,8,0,1,0,12.8,9.61A51.6,51.6,0,0,1,64,128,8,8,0,0,0,72,120Z"/></symbol>
+  <symbol id="i-tree" viewBox="0 0 256 256"><path d="M160,112h48a16,16,0,0,0,16-16V48a16,16,0,0,0-16-16H160a16,16,0,0,0-16,16V64H128a24,24,0,0,0-24,24v32H72v-8A16,16,0,0,0,56,96H24A16,16,0,0,0,8,112v32a16,16,0,0,0,16,16H56a16,16,0,0,0,16-16v-8h32v32a24,24,0,0,0,24,24h16v16a16,16,0,0,0,16,16h48a16,16,0,0,0,16-16V160a16,16,0,0,0-16-16H160a16,16,0,0,0-16,16v16H128a8,8,0,0,1-8-8V88a8,8,0,0,1,8-8h16V96A16,16,0,0,0,160,112ZM56,144H24V112H56v32Zm104,16h48v48H160Zm0-112h48V96H160Z"/></symbol>
+  <symbol id="i-lightning" viewBox="0 0 256 256"><path d="M215.79,118.17a8,8,0,0,0-5-5.66L153.18,90.9l14.66-73.33a8,8,0,0,0-13.69-7l-112,120a8,8,0,0,0,3,13l57.63,21.61L88.16,238.43a8,8,0,0,0,13.69,7l112-120A8,8,0,0,0,215.79,118.17Z"/></symbol>
+  <symbol id="i-flag" viewBox="0 0 256 256"><path d="M227.32,48.75A8,8,0,0,0,218.76,50c-28,24.22-51.72,12.48-79.21-1.13C111.07,34.76,78.78,18.79,42.76,50A8,8,0,0,0,40,56V224a8,8,0,0,0,16,0V179.77c26.79-21.16,49.87-9.75,76.45,3.41,28.49,14.09,60.77,30.06,96.79-1.13a8,8,0,0,0,2.76-6V56A8,8,0,0,0,227.32,48.75Z"/></symbol>
+</svg>
+
+<header class="nav" id="nav">
+  <a class="nav-brand" href="./" aria-label="Quoridor home">
+    <span class="nav-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+    Quoridor
+  </a>
+  <nav class="nav-links" aria-label="Sections">
+    <a href="#play" aria-current="page">Play</a>
+    <a href="#how">How it works</a>
+    <a href="#faq">Questions</a>
+    <a href="https://github.com/22ABLE22/quoridor" rel="noopener">Source</a>
+  </nav>
+  <div class="nav-actions">
+    <button id="themeBtn" class="theme-btn" type="button" aria-label="Theme: auto">
+      <svg class="icon" aria-hidden="true"><use href="#i-sun-horizon"/></svg>
+      <span id="themeLabel">Auto</span>
+    </button>
+  </div>
+</header>
+
+<main id="main">
+
+<section class="hero">
+  <div class="hero-art" aria-hidden="true"><canvas id="heroArt" width="920" height="440"></canvas></div>
+  <div class="wrap hero-inner">
+    <p class="hero-eyebrow"><span class="dot" aria-hidden="true"></span>Free, open source, works offline</p>
+    <h1>Block the path.<br>Get there first.</h1>
+    <p class="hero-sub">Quoridor, in the browser, for two to four players. Play a friend on the same screen or take on an engine that plans nine moves ahead and sees your jumps coming.</p>
+    <div class="hero-cta">
+      <a class="btn btn-primary" href="#play">Start a game<svg class="icon" aria-hidden="true"><use href="#i-arrow-right"/></svg></a>
+      <a class="btn" href="#how">How it works</a>
+    </div>
+    <p class="hero-proof">
+      <span><svg class="icon" aria-hidden="true"><use href="#i-check"/></svg>No account, no download</span>
+      <span><svg class="icon" aria-hidden="true"><use href="#i-check"/></svg>Runs from a local file</span>
+      <span><svg class="icon" aria-hidden="true"><use href="#i-check"/></svg>Rules and engine are MIT licensed</span>
+    </p>
+  </div>
+</section>
+
+<section class="tagline" id="tagline" aria-label="Why this game is worth a match">
+  <div class="wrap">
+    <p data-tagline>Nine squares wide, ten walls each, and one shortest path that your opponent is trying to close before you walk it.</p>
+  </div>
+</section>
+
+<section class="play" id="play">
+  <div class="wrap">
+    <div class="section-head">
+      <h2>The board</h2>
+      <p class="hint">Click a lit cell to move, or a groove to drop a wall. Keyboard works too.</p>
     </div>
 
-    <footer>Quoridor</footer>
-</div>
+    <div class="layout">
+      <div class="card board-card">
+        <div class="board-frame">
+          <canvas id="board" width="600" height="600" tabindex="0"
+                  role="application" aria-label="Quoridor board. Use arrow keys to move the cursor, Enter to play, W to place a wall."
+                  aria-describedby="boardHelp"></canvas>
+          <div class="board-empty" id="boardEmpty">
+            <h3>Pick your seats</h3>
+            <p>Two players with ten walls each, or four with five. Any seat can be a human, the engine, or off.</p>
+            <button id="openSetupBtn" class="btn btn-primary" type="button" data-open-setup>
+              Choose seats<svg class="icon" aria-hidden="true"><use href="#i-arrow-right"/></svg>
+            </button>
+          </div>
+        </div>
+        <div class="status" id="statusBar" role="status" aria-live="polite">
+          <span class="meta">Set up the seats to start a game</span>
+        </div>
+        <p id="boardHelp" class="hint sr-only">Arrow keys move the cursor between cells. Enter plays the highlighted move. Press W to switch to wall placement, arrow keys to choose a groove, R to rotate the wall, Enter to place it, Escape to go back to moving.</p>
+      </div>
+
+      <aside class="sidebar" aria-label="Game panel">
+        <section class="card side-block">
+          <h2>Players</h2>
+          <div id="playersList" class="players"></div>
+        </section>
+
+        <section class="card side-block">
+          <h2>Actions</h2>
+          <div class="row-btns">
+            <button id="undoBtn" class="btn btn-sm" type="button" disabled>
+              <svg class="icon" aria-hidden="true"><use href="#i-undo"/></svg>Undo
+            </button>
+            <button id="newGameBtn" class="btn btn-sm" type="button">
+              <svg class="icon" aria-hidden="true"><use href="#i-gear"/></svg>New game
+            </button>          </div>
+        </section>
+
+        <section class="card side-block">
+          <h2>Show on board</h2>
+          <div class="row-btns">
+            <button id="winRateBtn" class="btn btn-sm" type="button" aria-pressed="true">
+              <svg class="icon" aria-hidden="true"><use href="#i-chart-bar"/></svg>Win rate
+            </button>
+            <button id="pathsBtn" class="btn btn-sm" type="button" aria-pressed="true">
+              <svg class="icon" aria-hidden="true"><use href="#i-path"/></svg>Paths
+            </button>
+          </div>
+        </section>
+
+        <section class="card side-block">
+          <h2>History</h2>
+          <div id="historyList" class="history" aria-live="off"><p class="hist-empty">No moves yet</p></div>
+        </section>
+
+        <section class="card side-block" id="rules">
+          <h2>Rules</h2>
+          <details class="rules">
+            <summary>
+              <svg class="icon" aria-hidden="true"><use href="#i-list"/></svg>
+              Rules at a glance
+              <svg class="icon" aria-hidden="true"><use href="#i-caret"/></svg>
+            </summary>
+            <ol>
+              <li>Reach the edge opposite your start to win. On your turn, move one square or spend a wall.</li>
+              <li>A wall spans two squares and sits in a groove. It may not overlap or cross another wall.</li>
+              <li>No wall may seal any player off completely. Everyone keeps a path to their goal.</li>
+              <li>Adjacent to an opponent you may jump straight over it. If that square is blocked, jump diagonally to either side instead.</li>
+              <li>Two player games give ten walls each. Four player games give five. First to the far edge wins.</li>
+              <li>Walls are painted in the colour of whoever placed them, so you can read each side's blocking plan at a glance.</li>
+            </ol>
+          </details>
+        </section>
+      </aside>
+    </div>
+  </div>
+</section>
+
+<section class="steps" id="how">
+  <div class="wrap">
+    <h2 class="reveal">Three things to know before your first wall</h2>
+    <div class="steps-grid">
+      <article class="step reveal">
+        <div class="step-top">
+          <span class="step-ico"><svg class="icon icon-lg" aria-hidden="true"><use href="#i-users"/></svg></span>
+          <span class="step-no">01</span>
+        </div>
+        <h3>Set the seats</h3>
+        <p>Pick two or four players, then set each seat to human, AI, or off. One human against three AIs is a legal table.</p>
+      </article>
+      <article class="step reveal">
+        <div class="step-top">
+          <span class="step-ico"><svg class="icon icon-lg" aria-hidden="true"><use href="#i-flag"/></svg></span>
+          <span class="step-no">02</span>
+        </div>
+        <h3>Move or block</h3>
+        <p>Click a glowing cell to step, or click a groove to drop a wall. The preview turns red when a wall would seal somebody in.</p>
+      </article>
+      <article class="step reveal">
+        <div class="step-top">
+          <span class="step-ico"><svg class="icon icon-lg" aria-hidden="true"><use href="#i-tree"/></svg></span>
+          <span class="step-no">03</span>
+        </div>
+        <h3>Read the race</h3>
+        <p>Each card shows walls left, distance to goal, and a win rate sampled from 160 simulated finishes of the position you are in.</p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<section class="faq" id="faq">
+  <div class="wrap">
+    <h2 class="reveal">Questions</h2>
+    <div class="faq-list">
+      <details class="faq-item reveal">
+        <summary>Is this the official Quoridor?<svg class="icon" aria-hidden="true"><use href="#i-caret"/></svg></summary>
+        <p>No. Quoridor was designed by Mirko Marchesi and published by Gigamic in 1997. This is a third party reimplementation of the rules for study and play, with no affiliation, endorsement, or sponsorship from the publisher. The name and the game belong to their owners.</p>
+      </details>
+      <details class="faq-item reveal">
+        <summary>Do I need an account, a download, or an internet connection?<svg class="icon" aria-hidden="true"><use href="#i-caret"/></svg></summary>
+        <p>None of the three. The page is plain HTML, CSS, and JavaScript with no build step and no third party requests, so you can open the file from disk and play on a plane. Opened that way the Web Workers are blocked, and the engine quietly computes on the main thread instead.</p>
+      </details>
+      <details class="faq-item reveal">
+        <summary>How strong is the AI?<svg class="icon" aria-hidden="true"><use href="#i-caret"/></svg></summary>
+        <p>It searches with iterative deepening alpha beta and a Zobrist hashed transposition table, for about 2.4 seconds per move. It sees straight and diagonal jumps, and it only considers walls that actually block someone's shortest path. That is strong enough to punish loose play, and honest enough to say it is not a titled engine.</p>
+      </details>
+      <details class="faq-item reveal">
+        <summary>What do the win rate bars actually measure?<svg class="icon" aria-hidden="true"><use href="#i-caret"/></svg></summary>
+        <p>A Monte Carlo estimate. The engine plays out the current position many times with a fast greedy policy and counts who finishes first. One batch credits every player from the same sample set, so the bars stay consistent with each other and add up to about one hundred percent.</p>
+      </details>
+      <details class="faq-item reveal">
+        <summary>Can I play three players, or one against three AIs?<svg class="icon" aria-hidden="true"><use href="#i-caret"/></svg></summary>
+        <p>Yes. Seats set to off are dropped from the game, so any mix that leaves at least two active seats is valid. Four player games give each seat five walls instead of ten, which is what keeps a crowded board playable.</p>
+      </details>
+      <details class="faq-item reveal">
+        <summary>Can I play with the keyboard?<svg class="icon" aria-hidden="true"><use href="#i-caret"/></svg></summary>
+        <p>Tab to the board, then use the arrow keys to move a cursor and Enter to play. Press W to switch into wall placement, arrow keys to pick a groove, R to rotate the wall, and Escape to return to moving. Every move is also announced in the status line.</p>
+      </details>
+      <details class="faq-item reveal">
+        <summary>What does undo do in a game against the AI?<svg class="icon" aria-hidden="true"><use href="#i-caret"/></svg></summary>
+        <p>It rewinds the AI replies along with your own last action, so you land back on your own turn with the position you meant to change. It stops at your previous decision rather than making you press the button once per seat.</p>
+      </details>
+      <details class="faq-item reveal">
+        <summary>Where is my data going?<svg class="icon" aria-hidden="true"><use href="#i-caret"/></svg></summary>
+        <p>Nowhere. The game collects nothing and sends nothing. Your theme choice and two display toggles are kept in this browser's local storage so they survive a reload, and that is the whole of it.</p>
+      </details>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer class="footer">
+  <div class="wrap footer-inner">
+    <p>Quoridor is a game by Mirko Marchesi, published by Gigamic. This site is an unaffiliated reimplementation.</p>
+    <nav class="footer-links" aria-label="Footer">
+      <a href="https://github.com/22ABLE22/quoridor" rel="noopener">Source on GitHub</a>
+      <a href="legal.html">Privacy and terms</a>
+      <a href="https://github.com/22ABLE22/quoridor/blob/main/LICENSE" rel="noopener">MIT license</a>
+    </nav>
+  </div>
+</footer>
 
 <div id="setupOverlay" class="overlay">
-    <div class="modal">
-        <h2>New Game</h2>
-        <p class="sub">Choose the player count and each seat's type (Human / AI / Off)</p>
-        <div class="field-group">
-            <label>Game mode</label>
-            <div class="seg-row" id="modeSeg">
-                <button type="button" data-mode="2" aria-pressed="true">2 players · 10 walls each</button>
-                <button type="button" data-mode="4" aria-pressed="false">4 players · 5 walls each</button>
-            </div>
-        </div>
-        <div class="field-group">
-            <label>Seats</label>
-            <div id="seatRows"></div>
-        </div>
-        <div class="modal-actions">
-            <button id="startBtn" type="button" class="primary">Start Game</button>
-        </div>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="setupTitle">
+    <h2 id="setupTitle">New game</h2>
+    <p class="sub">Choose the player count, then set each seat to human, AI, or off.</p>
+    <div class="field">
+      <label id="modeLabel">Game mode</label>
+      <div class="seg" id="modeSeg" role="group" aria-labelledby="modeLabel">
+        <button type="button" class="btn" data-mode="2" aria-pressed="true">Two players, ten walls each</button>
+        <button type="button" class="btn" data-mode="4" aria-pressed="false">Four players, five walls each</button>
+      </div>
     </div>
+    <div class="field">
+      <label id="seatsLabel">Seats</label>
+      <div id="seatRows" role="group" aria-labelledby="seatsLabel"></div>
+    </div>
+    <div class="modal-actions">
+      <button id="startBtn" type="button" class="btn btn-primary">Start game</button>
+    </div>
+  </div>
 </div>
 
 <div id="winOverlay" class="overlay hidden">
-    <div class="modal win-modal">
-        <div class="crown">🏆</div>
-        <h2 id="winTitle">Red wins</h2>
-        <p class="sub" id="winSub">—</p>
-        <div class="modal-actions">
-            <button id="rematchBtn" type="button" class="primary">Rematch</button>
-            <button id="reconfigBtn" type="button">Change Setup</button>
-        </div>
+  <div class="modal win-modal" role="dialog" aria-modal="true" aria-labelledby="winTitle">
+    <div class="win-mark"><svg class="icon icon-xl" aria-hidden="true"><use href="#i-trophy"/></svg></div>
+    <h2 id="winTitle">Red wins</h2>
+    <p class="sub" id="winSub">—</p>
+    <div class="modal-actions">
+      <button id="rematchBtn" type="button" class="btn btn-primary">Rematch</button>
+      <button id="reconfigBtn" type="button" class="btn">Change setup</button>
     </div>
+  </div>
 </div>
 
-<div id="toast" class="toast"></div>
+<div id="toast" class="toast" role="alert" aria-live="assertive"></div>
 
 <script src="js/rules.js"></script>
 <script src="js/ai.js"></script>
@@ -253,5 +324,6 @@
 <script src="js/input.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/app.js"></script>
+<script src="js/site.js"></script>
 </body>
 </html>

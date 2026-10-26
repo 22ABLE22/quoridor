@@ -9,8 +9,10 @@ var QUI = (function () {
 
     /* ---------------- theme ---------------- */
     const THEME_ORDER = ['auto', 'light', 'dark'];
-    const THEME_LABEL = { auto: '🌗 Auto', light: '☀️ Light', dark: '🌙 Dark' };
+    const THEME_LABEL = { auto: 'Auto', light: 'Light', dark: 'Dark' };
+    const THEME_ICON = { auto: 'i-sun-horizon', light: 'i-sun', dark: 'i-moon' };
     const themeBtn = document.getElementById('themeBtn');
+    const themeLabel = document.getElementById('themeLabel');
 
     function readTheme() {
         try { return localStorage.getItem('quoridor.theme'); } catch (e) { return null; }
@@ -20,7 +22,11 @@ var QUI = (function () {
     }
     function applyTheme(mode) {
         document.documentElement.dataset.theme = mode;
-        themeBtn.textContent = THEME_LABEL[mode] || THEME_LABEL.auto;
+        themeLabel.textContent = THEME_LABEL[mode] || THEME_LABEL.auto;
+        const use = themeBtn.querySelector('use');
+        if (use) use.setAttribute('href', '#' + (THEME_ICON[mode] || THEME_ICON.auto));
+        themeBtn.setAttribute('aria-label', 'Theme: ' + (THEME_LABEL[mode] || 'Auto').toLowerCase());
+        document.dispatchEvent(new Event('quoridor:theme'));
         document.dispatchEvent(new Event('quoridor:redraw'));
     }
     let themeMode = readTheme();
@@ -49,9 +55,9 @@ var QUI = (function () {
     }
     let showWinRate = readWinRatePref();
     function applyWinRatePref() {
-        winRateBtn.setAttribute('aria-pressed', showWinRate);
-        document.querySelectorAll('.player-card').forEach(c => {
-            c.classList.toggle('winrate-hidden', !showWinRate);
+        winRateBtn.setAttribute('aria-pressed', String(showWinRate));
+        document.querySelectorAll('.player').forEach(c => {
+            c.classList.toggle('hide-rate', !showWinRate);
         });
     }
     winRateBtn.addEventListener('click', () => {
@@ -68,7 +74,7 @@ var QUI = (function () {
     }
     let showPaths = readPathsPref();
     function applyPathsPref() {
-        pathsBtn.setAttribute('aria-pressed', showPaths);
+        pathsBtn.setAttribute('aria-pressed', String(showPaths));
     }
     pathsBtn.addEventListener('click', () => {
         showPaths = !showPaths;
@@ -109,8 +115,8 @@ var QUI = (function () {
     function paintCard(pidx, pct) {
         const card = playersList.children[pidx];
         if (!card) return;
-        const fill = card.querySelector('.pc-winrate-fill');
-        const txt = card.querySelector('.pc-winrate-txt');
+        const fill = card.querySelector('.p-fill');
+        const txt = card.querySelector('.p-pct');
         if (!fill || !txt) return;
         fill.style.width = pct + '%';
         txt.textContent = Math.round(pct) + '%';
@@ -184,40 +190,39 @@ var QUI = (function () {
         }
         st.players.forEach((p, pidx) => {
             const card = document.createElement('div');
-            card.className = 'player-card' +
+            card.className = 'player' +
                 (st.winner === null && st.players[st.turn].id === p.id ? ' turn' : '') +
                 (st.winner === p.id ? ' win' : '') +
-                (showWinRate ? '' : ' winrate-hidden');
+                (showWinRate ? '' : ' hide-rate');
             card.style.setProperty('--pc', p.color);
-            const typeTag = p.type === 'ai' ? 'AI' : 'Human';
             card.innerHTML =
-                '<div class="pc-row1">' +
-                    '<span class="pc-dot"></span>' +
-                    '<span class="pc-name"></span>' +
-                    '<span class="pc-tag"></span>' +
+                '<div class="p-row">' +
+                    '<span class="p-dot"></span>' +
+                    '<span class="p-name"></span>' +
+                    '<span class="p-tag"></span>' +
                 '</div>' +
-                '<div class="pc-row2">' +
+                '<div class="p-meta">' +
                     '<span>Walls</span>' +
-                    '<span class="pc-walls"></span>' +
-                    '<span class="pc-dist"><b>—</b> to goal</span>' +
+                    '<span class="p-walls"></span>' +
+                    '<span class="p-dist"><b>—</b> to goal</span>' +
                 '</div>' +
-                '<div class="pc-row3">' +
-                    '<span class="pc-winrate"><span class="pc-winrate-fill"></span></span>' +
-                    '<span class="pc-winrate-txt">—</span>' +
+                '<div class="p-rate">' +
+                    '<span class="p-bar"><span class="p-fill"></span></span>' +
+                    '<span class="p-pct">—</span>' +
                 '</div>';
-            card.querySelector('.pc-name').textContent = p.name;
-            card.querySelector('.pc-tag').textContent = typeTag;
-            const wallsBox = card.querySelector('.pc-walls');
+            card.querySelector('.p-name').textContent = p.name;
+            card.querySelector('.p-tag').textContent = p.type === 'ai' ? 'AI' : 'Human';
+            const wallsBox = card.querySelector('.p-walls');
             for (let i = 0; i < p.wallQuota; i++) {
                 const w = document.createElement('span');
-                w.className = 'pc-wall' + (i < p.wallQuota - p.walls ? ' used' : '');
+                w.className = 'p-wall' + (i < p.wallQuota - p.walls ? ' used' : '');
                 wallsBox.appendChild(w);
             }
             const d = QRules.distanceToGoal(st, pidx);
-            card.querySelector('.pc-dist b').textContent = isFinite(d) ? d : '∞';
+            card.querySelector('.p-dist b').textContent = isFinite(d) ? d : '∞';
             // win rate (indexed by player position, matching winRates)
-            const fill = card.querySelector('.pc-winrate-fill');
-            const txt = card.querySelector('.pc-winrate-txt');
+            const fill = card.querySelector('.p-fill');
+            const txt = card.querySelector('.p-pct');
             if (st.winner === p.id) {
                 shownRates[pidx] = 100;
                 fill.style.width = '100%';
@@ -251,17 +256,20 @@ var QUI = (function () {
     function renderHistory(st) {
         historyList.innerHTML = '';
         if (!st.history.length) {
-            historyList.innerHTML = '<div class="hist-empty">No moves yet</div>';
+            const empty = document.createElement('p');
+            empty.className = 'hist-empty';
+            empty.textContent = 'No moves yet';
+            historyList.appendChild(empty);
             return;
         }
         for (let i = st.history.length - 1; i >= 0; i--) {
             const rec = st.history[i];
             const item = document.createElement('div');
-            item.className = 'hist-item';
+            item.className = 'hist';
             const p = st.players[rec.pi];
             const no = document.createElement('span');
             no.className = 'no';
-            no.textContent = (i + 1);
+            no.textContent = String(i + 1);
             const who = document.createElement('span');
             who.className = 'who';
             who.style.color = p.color;
@@ -281,9 +289,10 @@ var QUI = (function () {
         const p = st.players[st.winner];
         document.getElementById('winTitle').textContent = p.name + ' wins';
         document.getElementById('winSub').textContent =
-            st.history.length + ' moves · ' + st.players.length + ' players';
+            st.history.length + ' moves, ' + st.players.length + ' players';
         winOverlay.querySelector('.modal').style.setProperty('--win-color', p.color);
         winOverlay.classList.remove('hidden');
+        document.getElementById('rematchBtn').focus();
     }
     function hideWin() { winOverlay.classList.add('hidden'); }
 
@@ -293,7 +302,7 @@ var QUI = (function () {
         toastEl.textContent = msg;
         toastEl.className = 'toast show' + (isError ? ' error' : '');
         clearTimeout(toastTimer);
-        toastTimer = setTimeout(() => { toastEl.className = 'toast'; }, 1800);
+        toastTimer = setTimeout(() => { toastEl.className = 'toast'; }, 2200);
     }
 
     /* ---------------- public ---------------- */

@@ -47,7 +47,24 @@ function findBrowser() {
         '/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser',
         '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
     ].filter(Boolean);
-    return candidates.find(p => fs.existsSync(p)) || null;
+    const direct = candidates.find(p => fs.existsSync(p));
+    if (direct) return direct;
+    // A Playwright browser download works too: point E2E_BROWSER at the
+    // executable, or let this find the newest cached build.
+    const cache = process.env.LOCALAPPDATA && path.join(process.env.LOCALAPPDATA, 'ms-playwright');
+    if (!cache || !fs.existsSync(cache)) return null;
+    const builds = fs.readdirSync(cache)
+        .filter(d => /^chromium/.test(d))
+        .sort()
+        .reverse();
+    for (const build of builds) {
+        for (const rel of ['chrome-headless-shell-win64/chrome-headless-shell.exe',
+                           'chrome-win/chrome.exe']) {
+            const exe = path.join(cache, build, rel);
+            if (fs.existsSync(exe)) return exe;
+        }
+    }
+    return null;
 }
 
 /* ---------------- minimal CDP client (no npm dependencies) ---------------- */
@@ -164,14 +181,17 @@ function connect(url) {
         await send('Page.navigate', { url: `http://127.0.0.1:${PORT}/index.html` });
         await sleep(1200);
 
-        // Start a 2-player PVE game: Red human, Blue AI (the modal defaults).
+        // Start a 2-player PVE game: Red human, Blue AI (the setup defaults).
+        // The page opens on a board preview, so open the dialog first.
+        await evaluate(`document.getElementById('openSetupBtn').click()`);
+        await sleep(200);
         await evaluate(`document.getElementById('startBtn').click()`);
         await sleep(1800);
 
-        const cardState = `(() => Array.from(document.querySelectorAll('#playersList .player-card')).map(c => ({
-            name: c.querySelector('.pc-name').textContent,
-            txt: c.querySelector('.pc-winrate-txt').textContent,
-            width: c.querySelector('.pc-winrate-fill').style.width
+        const cardState = `(() => Array.from(document.querySelectorAll('#playersList .player')).map(c => ({
+            name: c.querySelector('.p-name').textContent,
+            txt: c.querySelector('.p-pct').textContent,
+            width: c.querySelector('.p-fill').style.width
         })))()`;
 
         const initial = await evaluate(cardState);

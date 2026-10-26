@@ -9,7 +9,7 @@
  *   cell     square cell size; groove = cell * 0.16 (wall channel)
  *   Cell (x,y) occupies  [pad + x*(cell+groove), +cell] in both axes.
  *
- * WALL GEOMETRY (fixes the "only horizontal walls" bug):
+ * WALL GEOMETRY
  *   An h-wall at anchor (x,y) lives in the ROW groove between rows y and y+1
  *   and spans columns x and x+1. Its center line is the groove's horizontal
  *   center: cy = pad + y*(cell+groove) + cell + groove/2.
@@ -19,6 +19,14 @@
  *   Hit-testing mirrors this: the pointer picks whichever wall center line
  *   it is closest to, so hovering along a row groove snaps horizontal walls
  *   and along a column groove snaps vertical walls — no mode switch needed.
+ *
+ * MOTION
+ *   The canvas has no CSS transitions, so this module runs its own short
+ *   animation pass and asks for a redraw through the same 'quoridor:redraw'
+ *   event the theme system uses. Nothing loops: a pass starts on a pawn move,
+ *   a wall landing, or a new path, and stops when every track has landed.
+ *   A pawn slides between cells, a new wall drops into its groove with a
+ *   small overshoot, and a shortest path draws itself on from the pawn.
  * ========================================================================= */
 var QRender = (function () {
 
@@ -46,7 +54,6 @@ var QRender = (function () {
     /** Center of the h-wall at anchor (x,y): middle of row groove y, spanning columns x..x+1. */
     function hWallCenter(x, y) {
         const gy = PAD + y * (CELL + GROOVE) + CELL + GROOVE / 2;
-        // center x = midpoint between column x center and column x+1 center
         const c0 = PAD + x * (CELL + GROOVE) + CELL / 2;
         const c1 = PAD + (x + 1) * (CELL + GROOVE) + CELL / 2;
         return { cx: (c0 + c1) / 2, cy: gy };
@@ -80,16 +87,129 @@ var QRender = (function () {
             cell: v('--cell'),
             cellLine: v('--cell-line'),
             groove: v('--groove'),
-            wall: v('--wall'),
-            wallEdge: v('--wall-edge'),
             goalDim: parseFloat(v('--goal-dim')) || 0.55,
             pieceRing: v('--piece-ring'),
             text: v('--text'),
             muted: v('--muted'),
-            brand: v('--brand')
+            accent: v('--accent')
         };
         themeCache = { mode, valid: true };
         return theme;
+    }
+
+    /* ---------------- motion tracks ---------------- */
+
+    const DUR_MOVE = 260;    // pawn slide between cells
+    const DUR_WALL = 320;    // wall dropping into its groove
+    const DUR_PATH = 620;    // shortest path drawing itself on
+
+    /** player id → {fx, fy, tx, ty, t0} in cell coordinates */
+    const pawnTracks = new Map();
+    /** "x,y,isH" → t0 of the frame the wall landed */
+    const wallTracks = new Map();
+    let pathTrack = { t0: 0, key: null };
+    let rafId = null;
+
+    function reducedMotion() {
+        return typeof window.matchMedia === 'function' &&
+            window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    }
+
+    function clock() {
+        return (typeof performance !== 'undefined' ? performance : Date).now();
+    }
+
+    const easeOut = t => 1 - Math.pow(1 - t, 3);
+    const easeBack = t => {
+        const c = 1.70158;
+        const p = t - 1;
+        return 1 + (c + 1) * p * p * p + c * p * p;
+    };
+    const clamp01 = t => t < 0 ? 0 : t > 1 ? 1 : t;
+
+    /** Advance every track; true when at least one is still running. */
+    function stepTracks(now) {
+        let busy = false;
+        for (const [id, tr] of pawnTracks) {
+            if (now - tr.t0 >= DUR_MOVE) pawnTracks.delete(id);
+            else busy = true;
+        }
+        for (const [k, t0] of wallTracks) {
+            if (now - t0 >= DUR_WALL) wallTracks.delete(k);
+            else busy = true;
+        }
+        if (pathTrack.key && now - pathTrack.t0 >= DUR_PATH) pathTrack.key = null;
+        else if (pathTrack.key) busy = true;
+        return busy;
+    }
+
+    function ensureLoop() {
+        if (rafId !== null || reducedMotion()) return;
+        if (typeof requestAnimationFrame !== 'function') return;
+        const tick = () => {
+            rafId = null;
+            const busy = stepTracks(clock());
+            document.dispatchEvent(new Event('quoridor:redraw'));
+            if (busy) rafId = requestAnimationFrame(tick);
+        };
+        rafId = requestAnimationFrame(tick);
+    }
+
+    /** Last drawn cell per player id, so a move can slide instead of teleport. */
+    const lastPos = new Map();
+
+    /** Compare against the previous frame and open a slide for anyone who moved. */
+    function beginFrame(st) {
+        if (!st) return;
+        const now = clock();
+        for (const p of st.players) {
+            const prev = lastPos.get(p.id);
+            if (!prev) continue;                       // first sighting: no slide
+            if (prev.x === p.pos.x && prev.y === p.pos.y) continue;
+            pawnTracks.set(p.id, { from: prev, to: { x: p.pos.x, y: p.pos.y }, t0: now });
+        }
+    }
+
+    /** Record the cells just drawn as the next frame's starting point. */
+    function endFrame(st) {
+        if (!st) return;
+        const seen = new Set();
+        for (const p of st.players) {
+            seen.add(p.id);
+            lastPos.set(p.id, { x: p.pos.x, y: p.pos.y });
+        }
+        for (const id of [...lastPos.keys()]) if (!seen.has(id)) lastPos.delete(id);
+        for (const id of [...pawnTracks.keys()]) if (!seen.has(id)) pawnTracks.delete(id);
+    }
+
+    function pawnDrawPos(p) {
+        const tr = pawnTracks.get(p.id);
+        if (!tr) return { x: p.pos.x, y: p.pos.y };
+        const t = clamp01((clock() - tr.t0) / DUR_MOVE);
+        const e = easeOut(t);
+        return {
+            x: tr.from.x + (tr.to.x - tr.from.x) * e,
+            y: tr.from.y + (tr.to.y - tr.from.y) * e
+        };
+    }
+
+    function wallScale(key) {
+        const t0 = wallTracks.get(key);
+        if (t0 === undefined) return 1;
+        return easeBack(clamp01((clock() - t0) / DUR_WALL));
+    }
+
+    /** Start a wall-landing animation for a freshly placed wall. */
+    function landed(x, y, isH) {
+        wallTracks.set(x + ',' + y + ',' + (isH ? 1 : 0), clock());
+        ensureLoop();
+    }
+
+    /** Start a path draw-on for a new position. */
+    function pathChanged(key) {
+        if (pathTrack.key === key) return;
+        pathTrack = { t0: clock(), key };
+        ensureLoop();
     }
 
     /* ---------------- main draw ---------------- */
@@ -99,13 +219,15 @@ var QRender = (function () {
      * @param st game state
      * @param opts {
      *   hoverCell, hoverWall {x,y,isH,legal}, legalCells [],
-     *   lastMove {from,to} | lastWall {x,y,isH}, currentPi, winPi,
-     *   paths []  (optional) shortest paths per player [{color, cells:[{x,y}]}]
+     *   lastMove {from,to} | lastWall {x,y,isH}, currentPi,
+     *   paths []  (optional) shortest paths per player [{color, cells:[{x,y}]}],
+     *   cursor {mode:'cell'|'wall', x, y, isH}  keyboard focus ring
      * }
      */
     function draw(st, opts) {
         const sizeCss = board.width / (board._dpr || 1);
         const dpr = board._dpr || 1;
+        beginFrame(st);
         ctx.save();
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         if (dpr > 1) ctx.scale(dpr, dpr);
@@ -155,7 +277,6 @@ var QRender = (function () {
         }
 
         // Shortest-path overlays — above cells/grooves, beneath walls & pawns
-        // (drawn AFTER the opaque cell fill, otherwise it would be hidden)
         if (opts.paths) drawPaths(opts.paths);
 
         // Placed walls — colored by the player who placed them
@@ -175,13 +296,13 @@ var QRender = (function () {
         // Legal move highlights (always shown for the human on turn)
         for (const c of (opts.legalCells || [])) {
             const r = cellRect(c.x, c.y);
-            ctx.fillStyle = withAlpha(theme.brand, c.jump ? 0.30 : 0.20);
-            roundRect(r.left + 3, r.top + 3, CELL - 6, CELL - 6, 3);
+            ctx.fillStyle = withAlpha(theme.accent, c.jump ? 0.30 : 0.18);
+            roundRect(r.left + 3, r.top + 3, CELL - 6, CELL - 6, 4);
             ctx.fill();
             if (c.jump) {
-                ctx.strokeStyle = withAlpha(theme.brand, 0.7);
+                ctx.strokeStyle = withAlpha(theme.accent, 0.7);
                 ctx.lineWidth = 2;
-                roundRect(r.left + 3, r.top + 3, CELL - 6, CELL - 6, 3);
+                roundRect(r.left + 3, r.top + 3, CELL - 6, CELL - 6, 4);
                 ctx.stroke();
             }
         }
@@ -189,21 +310,23 @@ var QRender = (function () {
         // Hover cell preview
         if (opts.hoverCell) {
             const r = cellRect(opts.hoverCell.x, opts.hoverCell.y);
-            ctx.fillStyle = withAlpha(theme.brand, 0.36);
-            roundRect(r.left + 2, r.top + 2, CELL - 4, CELL - 4, 3);
+            ctx.fillStyle = withAlpha(theme.accent, 0.32);
+            roundRect(r.left + 2, r.top + 2, CELL - 4, CELL - 4, 4);
             ctx.fill();
         }
 
         // Hover wall preview — shown in the current player's color
-        // (semi-transparent when legal, red-crossed when not)
         if (opts.hoverWall) {
-            const pc = st.players[st.turn] ? st.players[st.turn].color : theme.wall;
+            const pc = st.players[st.turn] ? st.players[st.turn].color : theme.accent;
             drawWall(opts.hoverWall.x, opts.hoverWall.y, opts.hoverWall.isH,
                 opts.hoverWall.legal === false ? 0 : (opts.hoverWall.legal ? 1 : 0), pc);
             if (opts.hoverWall.legal === false) {
                 drawWallDenied(opts.hoverWall);
             }
         }
+
+        // Keyboard cursor
+        if (opts.cursor) drawCursor(opts.cursor, st);
 
         // Pawns
         for (let i = 0; i < st.players.length; i++) {
@@ -214,7 +337,7 @@ var QRender = (function () {
         if (opts.lastMove) {
             const a = cellRect(opts.lastMove.from.x, opts.lastMove.from.y);
             const b = cellRect(opts.lastMove.to.x, opts.lastMove.to.y);
-            ctx.strokeStyle = withAlpha('#f5a623', 0.8);
+            ctx.strokeStyle = withAlpha('#e08a2e', 0.75);
             ctx.lineWidth = 2.5;
             ctx.setLineDash([6, 5]);
             ctx.beginPath();
@@ -225,21 +348,35 @@ var QRender = (function () {
         }
 
         ctx.restore();
+        endFrame(st);
     }
 
     /* ---------------- sub-draws ---------------- */
 
     /**
-     * Shortest-path overlays: each player's current best route as a soft
-     * dashed polyline in their color (drawn beneath pawns and walls).
+     * Shortest-path overlays: each player's current best route as a dashed
+     * polyline in their color, revealed from the pawn outward so the route
+     * reads as "this is where I am heading".
      */
     function drawPaths(paths) {
+        let reveal = 1;
+        if (pathTrack.key) {
+            reveal = easeOut(clamp01((clock() - pathTrack.t0) / DUR_PATH));
+        }
         ctx.save();
         ctx.lineWidth = 3;
         for (const p of paths) {
             if (!p.cells || p.cells.length < 2) continue;
-            ctx.strokeStyle = withAlpha(p.color, 0.35);
+            ctx.strokeStyle = withAlpha(p.color, 0.38);
             ctx.setLineDash([7, 6]);
+            let total = 0;
+            for (let i = 1; i < p.cells.length; i++) {
+                const a = cellRect(p.cells[i - 1].x, p.cells[i - 1].y);
+                const b = cellRect(p.cells[i].x, p.cells[i].y);
+                total += Math.hypot(b.cx - a.cx, b.cy - a.cy);
+            }
+            // a dash longer than the route draws exactly the first `shown` px
+            ctx.setLineDash([Math.max(0.01, total * reveal), 1e6]);
             ctx.beginPath();
             const first = cellRect(p.cells[0].x, p.cells[0].y);
             ctx.moveTo(first.cx, first.cy);
@@ -275,17 +412,19 @@ var QRender = (function () {
      * Orientation matters:
      *   h-wall → wide × thin (long axis horizontal, lying in a row groove)
      *   v-wall → thin × tall (long axis vertical, lying in a column groove)
+     * A wall that just landed scales up from its groove center.
      */
     function drawWall(x, y, isH, alpha, ownerColorHex) {
         const L = CELL * 2 + GROOVE;             // wall length (along the groove span)
         const T = Math.max(8, GROOVE * 0.95);    // wall thickness
         const { cx, cy } = wallCenter(x, y, isH);
-        const w = isH ? L : T;
-        const h = isH ? T : L;
+        const k = alpha === 1 ? wallScale(x + ',' + y + ',' + (isH ? 1 : 0)) : 1;
+        const w = (isH ? L : T) * k;
+        const h = (isH ? T : L) * k;
         // Walls painted in the placing player's color (darkened for
-        // contrast against the cells); fall back to the wooden default.
-        const body = ownerColorHex ? darken(ownerColorHex, 0.18) : theme.wall;
-        const edge = ownerColorHex ? darken(ownerColorHex, 0.45) : theme.wallEdge;
+        // contrast against the cells).
+        const body = ownerColorHex ? darken(ownerColorHex, 0.18) : theme.accent;
+        const edge = ownerColorHex ? darken(ownerColorHex, 0.45) : darken(theme.accent, 0.4);
         ctx.save();
         ctx.globalAlpha = alpha === 1 ? 1 : alpha === 0 ? 0.5 : Math.min(1, alpha);
         // drop shadow
@@ -310,7 +449,7 @@ var QRender = (function () {
         const h = hover.isH ? T : L;
         ctx.save();
         ctx.globalAlpha = 0.75;
-        ctx.strokeStyle = '#e5484d';
+        ctx.strokeStyle = '#d94a3d';
         ctx.lineWidth = 2.5;
         roundRect(cx - w / 2, cy - h / 2, w, h, 4);
         ctx.stroke();
@@ -327,8 +466,34 @@ var QRender = (function () {
         ctx.restore();
     }
 
+    /** Keyboard focus ring: a cell outline, or a groove crosshair for walls. */
+    function drawCursor(cursor, st) {
+        ctx.save();
+        ctx.strokeStyle = withAlpha(theme.accent, 0.95);
+        ctx.lineWidth = 2.5;
+        if (cursor.mode === 'wall') {
+            const { cx, cy } = wallCenter(cursor.x, cursor.y, cursor.isH);
+            const L = CELL * 2 + GROOVE;
+            const T = Math.max(8, GROOVE * 0.95);
+            const w = cursor.isH ? L : T;
+            const h = cursor.isH ? T : L;
+            ctx.setLineDash([5, 4]);
+            roundRect(cx - w / 2 - 2, cy - h / 2 - 2, w + 4, h + 4, 5);
+            ctx.stroke();
+            ctx.setLineDash([]);
+        } else {
+            const r = cellRect(cursor.x, cursor.y);
+            roundRect(r.left + 1, r.top + 1, CELL - 2, CELL - 2, 4);
+            ctx.stroke();
+            ctx.fillStyle = withAlpha(theme.accent, 0.1);
+            ctx.fill();
+        }
+        ctx.restore();
+    }
+
     function drawPiece(p, isCurrent) {
-        const r = cellRect(p.pos.x, p.pos.y);
+        const at = pawnDrawPos(p);
+        const r = cellRect(at.x, at.y);
         const cx = r.cx, cy = r.cy;
         const rad = CELL * 0.36;
         ctx.save();
@@ -478,7 +643,7 @@ var QRender = (function () {
         board, ctx, draw, resize,
         cellRect, hWallCenter, vWallCenter, wallCenter,
         pixelToCell, pixelToWall,
-        invalidateTheme,
+        invalidateTheme, landed, pathChanged,
         get CELL() { return CELL; }, get GROOVE() { return GROOVE; }, get PAD() { return PAD; },
         readTheme
     };

@@ -1,8 +1,10 @@
 # Quoridor
 
 An open-source web version of Quoridor, the wall-placement race game: be the
-first to bring your pawn to the opposite edge of the board. Pure front end —
-zero dependencies, no build step; open `index.html` and play.
+first to bring your pawn to the opposite edge of the board. Pure front end,
+zero dependencies, no build step. Open `index.html` and play.
+
+Live site: <https://22able22.github.io/quoridor/>
 
 ## Features
 
@@ -12,35 +14,33 @@ zero dependencies, no build step; open `index.html` and play.
   human against three AIs)
 - **Live win probability**: every player card carries a win-rate bar,
   estimated by Monte-Carlo simulation after each move and toggleable with
-  the **Win Rate** button (preference is remembered). While the AI is
+  the **Win rate** button (preference is remembered). While the AI is
   thinking the previous bars stay on screen; a fresh estimate then eases the
-  number and the bar together over ~0.45 s (slow at both ends, fast in the
-  middle) instead of snapping or blanking out
-- **Three themes**: system (Auto) / Light / Dark, cycled with one button and
+  number and the bar together over ~0.45 s instead of snapping or blanking out
+- **Three themes**: Auto / Light / Dark, cycled with one button and
   remembered across visits
 - **Complete rules**: 9×9 board, two-cell walls, straight and diagonal jumps,
   no jumping over two pawns (any player count), walls may not overlap or
   cross, and no wall may seal any player off from their goal (BFS
   reachability check)
-- **Unified input**: no mode toggle — click a cell to move, click a groove to
-  place a wall. The wall orientation follows the groove: hover along a row
-  groove for a horizontal wall, along a column groove for a vertical wall.
-  Legal move targets always glow; an illegal wall preview turns red.
+- **Unified input**: no mode toggle. Click a cell to move, click a groove to
+  place a wall; the orientation follows the groove. Legal move targets glow,
+  an illegal wall preview shows a red slash
+- **Keyboard play**: the board is a tab stop. Arrow keys move a cursor,
+  Enter plays, `W` switches to wall placement, `R` rotates the wall, `Esc`
+  goes back to moving. Every action is announced in the status line
 - **Color-coded walls**: every wall is painted in the color of the player
   who placed it, so you can read each side's blocking strategy at a glance
-  (and study how the AI defends).
-- **Game aids**: live shortest-distance counters, last-move trail,
-  undo (rolls back through AI replies to your previous action), full
-  move history
+- **Game aids**: live shortest-distance counters, last-move trail, undo
+  (rolls back through AI replies to your previous action), full move history
 - **Strong single AI**: iterative-deepening alpha-beta with a Zobrist-hashed
-  transposition table, time management (~2.4 s budget per move, hard-capped
-  under 3 s), relevant-wall pruning, and paranoid multi-opponent search for 3+
-  players — it sees jump tactics and wall counterplay. Two
+  transposition table, time management (~2.4 s budget per move), relevant-wall
+  pruning, and paranoid multi-opponent search for 3+ players. Two
   **Web Workers** share one inlined engine source: a "thinker" runs the search
   and a separate "sampler" estimates win rates, so a long search can never
   delay the bars. Under `file://` (no workers) both fall back to synchronous
-  computation automatically.
-- Touch-friendly (Pointer Events: press to preview, release to act)
+  computation automatically
+- **Touch-friendly** (Pointer Events: press to preview, release to act)
 
 ## About the game
 
@@ -51,13 +51,13 @@ Game names and trademarks belong to their respective owners.
 
 ## Play
 
-Open the live site: <https://22able22.github.io/quoridor/>
-(or open `index.html` directly from `file://`).
+Open the live site, or open `index.html` directly from `file://`.
 
-- Use the header button to cycle Auto / Light / Dark themes
-- **New Game** sets the player count and seats
+- The board opens with a preview position behind a **Choose seats** panel;
+  pick the player count and the seat types there
 - Click a cell to move; hover a groove to preview a wall and click to place it
 - **Undo** rewinds AI replies together with your own last action
+- The header button cycles Auto / Light / Dark
 
 ## Rules at a glance
 
@@ -70,27 +70,65 @@ Open the live site: <https://22able22.github.io/quoridor/>
 4. When orthogonally adjacent to an opponent, jump straight over it; if the
    landing square is blocked by a wall, the board edge, or a third pawn,
    jump diagonally to either side instead
-5. Jumping over two pawns at once is never allowed (any player count): a
-   straight jump needs a free landing square behind the single jumped pawn
+5. Jumping over two pawns at once is never allowed (any player count)
 6. 2-player: 10 walls each · 4-player: 5 walls each; first to reach the
    opposite edge wins
 
 ## Implementation
 
 ```
-index.html        # page skeleton + theme CSS variables (data-theme)
+index.html        # landing page + game shell
+legal.html        # privacy and terms
+404.html          # branded not-found page
+assets/css/app.css   # design system: tokens, layout, components
+assets/fonts/        # self-hosted Manrope (no third-party requests)
 js/rules.js       # rules engine (pure logic, no DOM; Node-testable)
-js/ai.js          # iterative-deepening PVS AI + win-rate simulator
+js/ai.js          # iterative-deepening AI + win-rate simulator
 js/ai-worker.js   # Web Worker wrapper (engine sources inlined into a Blob)
-js/render.js      # canvas board rendering (DPI-aware, theme-aware)
-js/input.js       # pointer input (mouse + touch unified)
+js/render.js      # canvas board rendering + short motion tracks
+js/input.js       # pointer and keyboard input
 js/ui.js          # theme cycling, player cards, animated win-rate bars, history, modals
 js/app.js         # controller (game lifecycle, AI scheduling, undo)
-bench/match.js    # head-to-head engine matches (how the AI changes were judged)
+js/site.js        # page motion: hero art, scroll reveals, tagline reveal, nav
+bench/match.js    # head-to-head engine matches
 tests/rules.test.mjs          # rules + AI regression tests (98 assertions)
-tests/worker-inline.check.js  # worker command-loop verification (run manually)
-tests/e2e-browser.js          # browser check for the win-rate bars (run manually)
+tests/search.test.mjs         # transposition-table move packing (419 checks)
+tests/worker-inline.check.js  # worker command-loop verification
+tests/e2e-browser.js          # browser check for the win-rate bars
+tools/qa.js                   # layout + behaviour QA (needs playwright-core)
 ```
+
+### Design system
+
+The page follows one small set of rules, and the CSS variables at the top of
+`assets/css/app.css` are the only place values are allowed to live.
+
+- **Type**: Manrope only, self-hosted, no italics, no ultra-bold. Every size
+  snaps to a Tailwind step (`--text-xs` … `--text-6xl`), and line heights come
+  with the step
+- **Spacing**: the 13-step scale only (`--s-0` … `--s-900`); nothing in
+  between
+- **Radius**: Tailwind values, plus the nested rule — an inner radius is the
+  outer radius minus the gap when the gap is under 32px
+- **Colour**: flat backgrounds only. The single gradient in the design is the
+  hero heading's text fill
+- **Motion**: one curve, `cubic-bezier(0.22, 1, 0.36, 1)`. Only `transform`
+  and `opacity` animate. Scroll reveals use `IntersectionObserver`, never a
+  scroll listener; the tagline's word-by-word light-up is the one throttled
+  `rAF` scroll handler, because it needs per-word geometry
+- **Reduced motion**: everything lands in its final state, no reveals, no
+  canvas tracks
+
+### Board motion
+
+The canvas has no CSS transitions, so `js/render.js` runs its own short
+animation pass and asks for a redraw through the same `quoridor:redraw`
+event the theme system uses. A pass starts on a pawn move, a wall landing, or
+a new shortest path, and stops when every track has landed — nothing loops.
+A pawn slides between cells, a new wall drops into its groove with a small
+overshoot, and a shortest path draws itself on from the pawn outward.
+
+### Engine notes
 
 - Classic script tags, no bundler — works from `file://`
 - The rules engine and AI are DOM-free: tests load them in a Node `vm` and
@@ -98,11 +136,9 @@ tests/e2e-browser.js          # browser check for the win-rate bars (run manuall
   conflicts (overlap / crossing / T-touch), reachability (no sealing), undo
   consistency, and that the AI places both wall orientations
 - Search pruning is sound, not heuristic: a wall is only tried when it blocks
-  an edge of some player's canonical shortest path, because a wall that
-  raises nobody's distance — or that seals somebody off — must block that
-  player's shortest path. The transposition table uses a generation stamp
-  instead of a per-move clear, and stores mate scores ply-normalized so a
-  bound hit stays valid at any ply
+  an edge of some player's canonical shortest path. The transposition table
+  uses a generation stamp instead of a per-move clear, and stores mate scores
+  ply-normalized so a bound hit stays valid at any ply
 - Packed transposition-table moves reserve four bits per coordinate. The board
   has coordinates `0..8`, so a three-bit field silently decoded moves to row or
   column 8 as a different cell; the wider field keeps every pawn move intact
@@ -110,42 +146,33 @@ tests/e2e-browser.js          # browser check for the win-rate bars (run manuall
   principal-variation rewrite with aspiration windows was measured at 34% over
   32 games against this engine (about 96% of individual moves were identical,
   so the loss came from the remaining tactical disagreements), and it was
-  reverted. Deeper search is not evidence of better play: the reverted version
-  reached the same depth in the same time and still played worse
+  reverted. Deeper search is not evidence of better play
 - Win rates come from one Monte-Carlo batch that credits every player from
   the same sample set, so the bars are mutually consistent and the cost is
   paid once per position rather than once per player
 - Wall geometry: an h-wall at anchor (x,y) lies in the row groove between
   rows y and y+1 spanning columns x and x+1; a v-wall lies in the column
-  groove between columns x and x+1 spanning rows y and y+1. Hit-testing
-  picks the nearest wall center line, which is what makes both orientations
-  naturally reachable with a single click.
+  groove between columns x and x+1 spanning rows y and y+1
 
 ## Tests
 
 ```text
-node tests/rules.test.mjs
+node tests/rules.test.mjs     # rules + AI regressions
 node tests/search.test.mjs    # transposition-table move packing
-node bench/match.js --a js/ai.js --b <other-engine.js> --games 48 --budget 200
-node tests/e2e-browser.js      # needs Edge or Chrome; skips if neither is found
+node tests/worker-inline.check.js
+node tests/e2e-browser.js     # needs Edge or Chrome; skips if neither is found
+node tools/qa.js              # layout, keyboard, reveals, 404 (needs playwright-core)
 ```
 
-`tests/search.test.mjs` checks that every pawn destination and every wall anchor
-survives the transposition table's move packing without collision, and that the
-engine still returns a legal action without mutating the caller's position. It
-was written after a three-bit coordinate field silently mangled moves to row and
-column 8; reintroducing that field makes the test fail.
+`tools/qa.js` drives a real Chromium at three widths in both themes and checks
+what a screenshot cannot: no horizontal overflow, the floating nav clearing the
+board, the board being focusable with a visible focus ring, `Enter` actually
+playing a keyboard move, scroll reveals firing, the tagline lighting word by
+word, and the theme button repainting. Screenshots land in `tools/shots/`
+(git-ignored). It reads `PW_CORE` for the `playwright-core` path.
 
-`bench/match.js` plays two engine builds with colours alternated. Repeated
-openings and timing-dependent searches are correlated, so its nominal binomial
-interval is only descriptive. Use it to compare builds, not to certify one: a
-principal-variation rewrite here scored 34% over 32 games against the engine it
-replaced while searching to the same depth in the same time, and it was
-reverted. Depth reached and walls spent are efficiency observations, not
-strength evidence.
-
-Browser smoke test: open `index.html?autotest=1` — it skips the setup modal
-and starts an AI vs AI game.
+Browser smoke test: open `index.html?autotest=1` — it skips the setup and
+starts an AI vs AI game.
 
 ## License
 

@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="auto">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Privacy and terms — Quoridor</title>
+<meta name="description" content="What Quoridor stores, what it never collects, and the terms the MIT licensed source ships under.">
+<meta name="robots" content="noindex">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23241f18'/%3E%3Crect x='7' y='7' width='8' height='8' rx='1.5' fill='%23f2f0ec'/%3E%3Crect x='17' y='7' width='8' height='8' rx='1.5' fill='%23f2f0ec' opacity='.45'/%3E%3Crect x='7' y='17' width='8' height='8' rx='1.5' fill='%23f2f0ec' opacity='.45'/%3E%3Crect x='17' y='17' width='8' height='8' rx='1.5' fill='%239c5322'/%3E%3C/svg%3E">
+<link rel="preload" href="assets/fonts/manrope-latin-400.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="assets/css/app.css">
+<style>
+    .doc { max-width: 680px; margin-inline: auto; padding-block: calc(var(--s-900) + var(--s-500)) var(--s-800); }
+    .doc h1 { font-size: var(--text-4xl); line-height: var(--lh-4xl); }
+    .doc h2 { margin-top: var(--s-600); font-size: var(--text-xl); line-height: var(--lh-xl); }
+    .doc p { margin-top: var(--s-200); font-size: var(--text-base); line-height: 1.7; color: var(--muted); }
+    .doc a { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
+    .doc .back { display: inline-flex; align-items: center; gap: var(--s-75); margin-top: var(--s-600); font-weight: 600; color: var(--text-strong); }
+    .doc .lede { margin-top: var(--s-200); font-size: var(--text-lg); line-height: var(--lh-lg); color: var(--muted); }
+</style>
+</head>
+<body>
+
+<header class="nav">
+  <a class="nav-brand" href="./" aria-label="Quoridor home">
+    <span class="nav-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+    Quoridor
+  </a>
+  <nav class="nav-links" aria-label="Sections">
+    <a href="index.html#play">Play</a>
+    <a href="index.html#how">How it works</a>
+    <a href="index.html#faq">Questions</a>
+  </nav>
+</header>
+
+<main class="wrap">
+  <article class="doc">
+    <h1>Privacy and terms</h1>
+    <p class="lede">Short version: the game collects nothing, sends nothing, and the source is MIT licensed. The long version is below.</p>
+
+    <h2>What this site stores</h2>
+    <p>Three values live in your browser's local storage, and nowhere else. They are the theme you picked, whether the win rate bars are shown, and whether shortest paths are drawn on the board. They exist so the page looks the same when you come back. Clearing site data removes them.</p>
+
+    <h2>What this site collects</h2>
+    <p>Nothing. There is no analytics, no advertising, no tracking pixel, no cookie, and no account. The page makes no network requests to any third party: the typeface is served from this site, and every script is local.</p>
+
+    <h2>Hosting</h2>
+    <p>This site is served by GitHub Pages. GitHub may keep standard server logs for its own operation, which is outside this project's control. If you would rather not touch a server at all, the same files run from a local folder with no network connection.</p>
+
+    <h2>Terms</h2>
+    <p>The source code is released under the <a href="https://github.com/22ABLE22/quoridor/blob/main/LICENSE" rel="noopener">MIT License</a>. You may use, copy, modify, and distribute it, provided the copyright notice travels with it. It comes with no warranty of any kind.</p>
+
+    <h2>About the game</h2>
+    <p>Quoridor was designed by Mirko Marchesi and is published by Gigamic. This is an independent reimplementation of the rules for study and play. It is not affiliated with, endorsed by, or sponsored by the publisher, and the game's name and trademarks belong to their respective owners.</p>
+
+    <a class="back" href="./">Back to the board</a>
+  </article>
+</main>
+
+<script>
+(function () {
+    var saved = null;
+    try { saved = localStorage.getItem('quoridor.theme'); } catch (e) { /* ignore */ }
+    document.documentElement.dataset.theme = saved === 'light' || saved === 'dark' ? saved : 'auto';
+})();
+</script>
+</body>
+</html>

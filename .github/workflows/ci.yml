@@ -26,3 +26,7 @@ jobs:
         run: for file in js/*.js; do node --check "$file"; done
       - name: Run rules and AI regression tests
         run: node tests/rules.test.mjs
+      - name: Run transposition-table packing tests
+        run: node tests/search.test.mjs
+      - name: Check the worker command loop
+        run: node tests/worker-inline.check.js

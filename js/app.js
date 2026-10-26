@@ -6,6 +6,7 @@
  *   - game lifecycle (new game / running / finished / rematch)
  *   - unified input handling: click a cell to move, click a groove to place
  *     a wall (orientation inferred from the groove — no mode toggle)
+ *   - keyboard play (cursor + wall mode, see js/input.js)
  *   - AI turn scheduling (setTimeout lets the UI paint first)
  *   - undo (rolls back to before the last human action)
  *   - setup modal (2/4 players, per-seat Human/AI/Off + names)
@@ -29,6 +30,38 @@ var QApp = (function () {
     /* ---------------- drawing ---------------- */
 
     let pathCache = { key: null, paths: null };   // recompute only when the position changes
+    const boardFrame = board.parentElement;
+    const boardEmpty = document.getElementById('boardEmpty');
+    let previewing = false;       // true while the start panel is over the board
+
+    /**
+     * The page opens on a real board, not on a modal: until the first game
+     * exists, `st` is a preview position (a few moves played out so the board
+     * has pawns, a path and walls to look at) sitting behind the "choose
+     * seats" panel. Starting a game swaps in the real state.
+     */
+    function previewState() {
+        const g = QRules.createGame(2, [
+            { name: 'Red', type: 'human' },
+            { name: 'Blue', type: 'ai' }
+        ]);
+        QRules.applyWall(g, 0, 4, 6, true);
+        QRules.applyMove(g, 1, { x: 4, y: 1 });
+        QRules.applyWall(g, 0, 2, 4, false);
+        QRules.applyMove(g, 1, { x: 4, y: 2 });
+        // The preview is scenery: an empty history and a fresh wall count
+        // keep the cards from advertising a game nobody is playing.
+        g.history = [];
+        g.players.forEach(p => { p.walls = p.wallQuota; });
+        return g;
+    }
+
+    function showEmptyState(on) {
+        previewing = !!on;
+        if (!boardEmpty) return;
+        boardEmpty.classList.toggle('hidden', !on);
+        boardFrame.classList.toggle('preview', on);
+    }
 
     function computePaths() {
         if (!st || st.winner !== null || !QUI.showPaths) return null;
@@ -44,11 +77,31 @@ var QApp = (function () {
             if (cells && cells.length > 1) paths.push({ color: p.color, cells });
         }
         pathCache = { key, paths };
+        QRender.pathChanged(key);
         return paths;
+    }
+
+    /** The keyboard cursor only earns screen space while the board has focus. */
+    function activeCursor() {
+        if (document.activeElement !== board) return null;
+        if (!st || st.winner !== null || aiThinking) return null;
+        if (st.players[st.turn].type !== 'human') return null;
+        return QInput.cursor;
     }
 
     function redraw() {
         if (!st) return;
+        // While the start panel is up, the board is a still picture: no
+        // legal-move glow, no keyboard cursor, no hover preview.
+        if (previewing) {
+            QRender.draw(st, {
+                hoverCell: null, hoverWall: null, legalCells: [],
+                paths: computePaths(),
+                currentPi: null, lastMove: null, lastWall: null,
+                cursor: null
+            });
+            return;
+        }
         const humanTurn = st.winner === null && st.players[st.turn].type === 'human';
         const legalCells = humanTurn ? QRules.legalMoves(st, st.turn) : [];
         const lastRec = st.history[st.history.length - 1];
@@ -58,7 +111,8 @@ var QApp = (function () {
             paths: computePaths(),
             currentPi: st.winner === null ? st.turn : st.winner,
             lastMove: lastRec && lastRec.type === 'move' ? lastRec : null,
-            lastWall: lastRec && lastRec.type === 'wall' ? lastRec : null
+            lastWall: lastRec && lastRec.type === 'wall' ? lastRec : null,
+            cursor: activeCursor()
         });
     }
 
@@ -139,17 +193,25 @@ var QApp = (function () {
         if (!st) return;
         if (st.winner !== null) {
             const p = st.players[st.winner];
-            QUI.setStatus('<b style="color:' + p.color + '">' + esc(p.name) + '</b> reached the goal edge and wins! 🏆');
+            QUI.setStatus('<span class="who" style="--pc:' + p.color + '"><span class="swatch"></span>' +
+                '<b>' + esc(p.name) + '</b> reached the goal edge and wins</span>' +
+                '<span class="meta">' + st.history.length + ' moves</span>');
             return;
         }
         const p = st.players[st.turn];
         const d = QRules.distanceToGoal(st, st.turn);
         const distText = isFinite(d) ? '<b>' + d + '</b> to goal' : 'no path';
+        const who = '<span class="who" style="--pc:' + p.color + '"><span class="swatch"></span><b>' +
+            esc(p.name) + '</b></span>';
         if (p.type === 'ai') {
-            QUI.setStatus('<b style="color:' + p.color + '">' + esc(p.name) + '</b> (AI) is thinking… ' + distText);
+            QUI.setStatus(who + '<span class="thinking">thinking<i></i><i></i><i></i></span>' +
+                '<span class="meta">' + distText + '</span>');
         } else {
-            QUI.setStatus('Your move, <b style="color:' + p.color + '">' + esc(p.name) + '</b> · ' + p.walls + ' walls left · ' +
-                distText + ' — click a cell to move, or a groove to place a wall');
+            const hint = QInput.cursor.mode === 'wall'
+                ? 'W / R to aim a wall, Esc to move'
+                : 'click a cell, or a groove for a wall';
+            QUI.setStatus(who +
+                '<span class="meta">' + p.walls + ' walls left · ' + distText + ' · ' + hint + '</span>');
         }
     }
 
@@ -157,8 +219,10 @@ var QApp = (function () {
     function showAIStats(pName, pColor, stats) {
         if (!stats) return;
         const nodes = stats.nodes >= 1000 ? (stats.nodes / 1000).toFixed(1) + 'k' : stats.nodes;
-        QUI.setStatus('<b style="color:' + pColor + '">' + esc(pName) + '</b> (AI) · depth <b>' + stats.depth + '</b> · eval <b>' +
-            (stats.score > 0 ? '+' : '') + stats.score + '</b> · ' + nodes + ' nodes · ' + stats.ms + 'ms');
+        QUI.setStatus('<span class="who" style="--pc:' + pColor + '"><span class="swatch"></span><b>' +
+            esc(pName) + '</b></span>' +
+            '<span class="meta">depth <b>' + stats.depth + '</b> · eval <b>' +
+            (stats.score > 0 ? '+' : '') + stats.score + '</b> · ' + nodes + ' nodes · ' + stats.ms + 'ms</span>');
     }
 
     function updateButtons() {
@@ -168,7 +232,8 @@ var QApp = (function () {
     /* ---------------- input ---------------- */
     QInput.bind({
         onTap: onBoardTap,
-        onHover: onHover
+        onHover: onHover,
+        onCursor: onCursor
     });
 
     function onBoardTap(cell, wall) {
@@ -180,22 +245,23 @@ var QApp = (function () {
         if (wall) {
             const ok = QRules.canPlaceWall(st, pi, wall.x, wall.y, wall.isH);
             if (!ok) {
-                let why = 'Illegal wall position';
+                let why;
                 const p = st.players[pi];
                 if (p.walls <= 0) why = 'No walls left';
-                else if (QRules.wallConflicts(st, wall.x, wall.y, wall.isH)) why = 'Overlaps or crosses an existing wall';
-                else why = 'You cannot seal off any player completely';
+                else if (QRules.wallConflicts(st, wall.x, wall.y, wall.isH)) why = 'That wall overlaps or crosses another';
+                else why = 'That wall would seal a player off completely';
                 QUI.showToast(why, true);
                 return;
             }
             QRules.applyWall(st, pi, wall.x, wall.y, wall.isH);
+            QRender.landed(wall.x, wall.y, wall.isH);
             afterAction();
             return;
         }
         // Otherwise: pawn move.
         if (!cell) return;
         const legal = QRules.legalMoves(st, pi).find(m => m.x === cell.x && m.y === cell.y);
-        if (!legal) { QUI.showToast('Illegal move', true); return; }
+        if (!legal) { QUI.showToast('That square is not a legal move', true); return; }
         QRules.applyMove(st, pi, cell);
         afterAction();
     }
@@ -215,6 +281,16 @@ var QApp = (function () {
             (wall && hoverWall && (wall.x !== hoverWall.x || wall.y !== hoverWall.y || wall.isH !== hoverWall.isH || wall.legal !== hoverWall.legal))) changed = true;
         hoverWall = wall;
         if (changed) redraw();
+    }
+
+    /** Keyboard cursor moved: refresh the status hint, then repaint. */
+    function onCursor(cursor) {
+        hoverCell = cursor.mode === 'cell' ? { x: cursor.x, y: cursor.y } : null;
+        hoverWall = cursor.mode === 'wall' && st
+            ? { x: cursor.x, y: cursor.y, isH: cursor.isH, legal: QRules.canPlaceWall(st, st.turn, cursor.x, cursor.y, cursor.isH) }
+            : null;
+        updateStatus();
+        redraw();
     }
 
     /* ---------------- post-action ---------------- */
@@ -256,6 +332,7 @@ var QApp = (function () {
                     QRules.applyMove(st, pi, action.target);
                 } else {
                     QRules.applyWall(st, pi, action.wall.x, action.wall.y, action.wall.isH);
+                    QRender.landed(action.wall.x, action.wall.y, action.wall.isH);
                 }
                 // show what the AI was thinking before the next status overwrite
                 const mover = st.players[pi];
@@ -330,20 +407,20 @@ var QApp = (function () {
             const def = defs[i];
             const cfg = seatConfig[i];
             const row = document.createElement('div');
-            row.className = 'seat-row' + (cfg.type === 'off' ? ' off' : '');
+            row.className = 'seat' + (cfg.type === 'off' ? ' off' : '');
             row.innerHTML =
                 '<span class="seat-dot" style="background:' + def.color + '"></span>' +
-                '<span class="seat-name"><input maxlength="12"></span>' +
+                '<input type="text" maxlength="12" aria-label="Name for the ' + def.name + ' seat">' +
                 '<span class="seat-type">' +
-                    '<button type="button" data-t="human">Human</button>' +
-                    '<button type="button" data-t="ai">AI</button>' +
-                    '<button type="button" data-t="off">Off</button>' +
+                    '<button type="button" class="btn" data-t="human">Human</button>' +
+                    '<button type="button" class="btn" data-t="ai">AI</button>' +
+                    '<button type="button" class="btn" data-t="off">Off</button>' +
                 '</span>';
             const nameInput = row.querySelector('input');
             nameInput.value = cfg.name;
             nameInput.addEventListener('input', () => { cfg.name = nameInput.value; });
             row.querySelectorAll('.seat-type button').forEach(btn => {
-                btn.setAttribute('aria-pressed', btn.dataset.t === cfg.type);
+                btn.setAttribute('aria-pressed', String(btn.dataset.t === cfg.type));
                 btn.addEventListener('click', () => {
                     cfg.type = btn.dataset.t;
                     renderSeatRows();
@@ -356,50 +433,54 @@ var QApp = (function () {
     modeSeg.querySelectorAll('button').forEach(btn => {
         btn.addEventListener('click', () => {
             setupMode = +btn.dataset.mode;
-            modeSeg.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', +b.dataset.mode === setupMode));
+            modeSeg.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.mode === setupMode)));
             renderSeatRows();
         });
     });
+
+    function startFromConfig() {
+        QUI.hideSetup();
+        QUI.hideWin();
+        showEmptyState(false);
+        hoverCell = hoverWall = null;
+        // Park the keyboard cursor on the human seat's pawn so the first
+        // arrow press steps toward a legal cell.
+        const human = st.players.find(p => p.type === 'human');
+        if (human) QInput.focusPlayer(human.pos);
+        else QInput.clampCursor();
+        gameEpoch++;
+        winRates = null;
+        QUI.resetWinRates();
+        pathCache = { key: null, paths: null };
+        refreshUI();
+        scheduleAI();
+        refreshWinRates();
+    }
 
     startBtn.addEventListener('click', () => {
         try {
             st = QRules.createGame(setupMode, seatConfig.slice(0, setupMode));
         } catch (err) {
             QUI.showToast(err.message === 'at least 2 players are required'
-                ? 'At least 2 seats must be active' : err.message, true);
+                ? 'At least two seats must stay on' : err.message, true);
             return;
         }
-        QUI.hideSetup();
-        QUI.hideWin();
-        hoverCell = hoverWall = null;
-        gameEpoch++;
-        winRates = null;
-        QUI.resetWinRates();
-        pathCache = { key: null, paths: null };
-        refreshUI();
-        scheduleAI();
-        refreshWinRates();
+        startFromConfig();
+        board.focus();
     });
 
     rematchBtn.addEventListener('click', () => {
         const seats = st.players.map(p => ({ name: p.name, type: p.type }));
         st = QRules.createGame(st.mode, seats);
-        QUI.hideWin();
-        hoverCell = hoverWall = null;
-        gameEpoch++;
-        winRates = null;
-        QUI.resetWinRates();
-        pathCache = { key: null, paths: null };
-        refreshUI();
-        scheduleAI();
-        refreshWinRates();
+        startFromConfig();
+        board.focus();
     });
 
     reconfigBtn.addEventListener('click', () => {
         QUI.hideWin();
         QUI.showSetup();
         setupMode = st.mode;
-        modeSeg.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', +b.dataset.mode === setupMode));
+        modeSeg.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.mode === setupMode)));
         const active = st.players;
         for (let i = 0; i < setupMode; i++) {
             const found = active.find(p => p.id === i);
@@ -415,6 +496,16 @@ var QApp = (function () {
         renderSeatRows();
     });
 
+    // The board's own start panel opens the same setup dialog.
+    const openSetupBtn = document.getElementById('openSetupBtn');
+    if (openSetupBtn) {
+        openSetupBtn.addEventListener('click', () => {
+            QUI.showSetup();
+            renderSeatRows();
+            startBtn.focus();
+        });
+    }
+
     /* ---------------- dismiss modals without starting a game ----------------
      * Clicking the dim backdrop (or pressing Esc) cancels the setup modal and
      * returns to the game in progress. A finished game goes back to the result
@@ -426,13 +517,12 @@ var QApp = (function () {
         if (st.winner !== null) QUI.showWin(st);
         refreshUI();
         scheduleAI();
-    }
-    setupOverlay.addEventListener('click', (e) => {
-        if (e.target !== setupOverlay) return;   // only the backdrop itself
+    }    QUI.setupOverlay.addEventListener('click', (e) => {
+        if (e.target !== QUI.setupOverlay) return;   // only the backdrop itself
         cancelSetup();
     });
-    winOverlay.addEventListener('click', (e) => {
-        if (e.target !== winOverlay) return;
+    QUI.winOverlay.addEventListener('click', (e) => {
+        if (e.target !== QUI.winOverlay) return;
         QUI.hideWin();
         refreshUI();
     });
@@ -440,8 +530,8 @@ var QApp = (function () {
         if (e.key !== 'Escape') return;
         const tag = (e.target && e.target.tagName) || '';
         if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
-        if (!setupOverlay.classList.contains('hidden')) cancelSetup();
-        else if (!winOverlay.classList.contains('hidden')) { QUI.hideWin(); refreshUI(); }
+        if (!QUI.setupOverlay.classList.contains('hidden')) cancelSetup();
+        else if (!QUI.winOverlay.classList.contains('hidden')) { QUI.hideWin(); refreshUI(); }
     });
 
     /* ---------------- theme change redraws ---------------- */
@@ -456,11 +546,17 @@ var QApp = (function () {
     /* ---------------- responsive sizing ---------------- */
     function fitBoard() {
         const wrap = board.parentElement;
-        const size = Math.max(280, Math.min(wrap.clientWidth, wrap.clientHeight || wrap.clientWidth));
+        const avail = wrap.clientWidth || 0;
+        const vh = window.innerHeight || 800;
+        // The board is the page's main object: cap it so the status line and
+        // the sidebar stay in view, and never let it collapse on a phone.
+        const cap = Math.min(avail, Math.max(320, Math.min(vh - 260, 720)));
+        const size = Math.max(280, Math.min(avail, cap));
         QRender.resize(Math.floor(size));
         redraw();
     }
     window.addEventListener('resize', fitBoard);
+    window.addEventListener('orientationchange', fitBoard);
 
     /* ---------------- escape helper ---------------- */
     function esc(s) {
@@ -471,9 +567,14 @@ var QApp = (function () {
     function init() {
         fitBoard();
         renderSeatRows();
-        QUI.showSetup();
-        QUI.setStatus('Set up the seats to start a game');
-        // Test hook: ?autotest=1 skips the modal and starts AI vs AI (browser smoke test).
+        // Open on a live board preview, not on a modal: the page reads as a
+        // product you can already see. The setup modal opens on demand.
+        st = previewState();
+        showEmptyState(true);
+        QUI.hideSetup();
+        QUI.setStatus('<span class="meta">Choose your seats to start a game</span>');
+        refreshUI();
+        // Test hook: ?autotest=1 skips the setup and starts AI vs AI (browser smoke test).
         try {
             if (new URLSearchParams(location.search).get('autotest') === '1') {
                 QUI.hideSetup();
@@ -481,6 +582,7 @@ var QApp = (function () {
                     { name: 'Red', type: 'ai' },
                     { name: 'Blue', type: 'ai' }
                 ]);
+                showEmptyState(false);
                 QUI.resetWinRates();
                 refreshUI();
                 scheduleAI();
@@ -492,7 +594,7 @@ var QApp = (function () {
 
     return {
         get state() { return st; },
-        redraw, refreshUI, scheduleAI
+        redraw, refreshUI, scheduleAI, fitBoard
     };
 })();
 

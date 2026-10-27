@@ -28,5 +28,7 @@ jobs:
         run: node tests/rules.test.mjs
       - name: Run transposition-table packing tests
         run: node tests/search.test.mjs
+      - name: Run keyboard cursor tests
+        run: node tests/cursor.test.mjs
       - name: Check the worker command loop
         run: node tests/worker-inline.check.js

@@ -40,14 +40,21 @@ var QInput = (function () {
 
     /* ---------------- cursor ---------------- */
 
-    function maxIndex() { return cursor.mode === 'wall' ? QRules.ANCH - 1 : QRules.N - 1; }
-
+    /**
+     * Apply a PARTIAL cursor update: any field left out keeps its current
+     * value. Rotation is the reason this matters — it only carries `isH`, and
+     * reading `next.x` from that call would clamp `undefined` to NaN and make
+     * the wall preview vanish.
+     */
     function setCursor(next, silent) {
-        const lim = maxIndex();
+        const mode = next.mode || cursor.mode;
+        const lim = mode === 'wall' ? QRules.ANCH - 1 : QRules.N - 1;
+        const x = next.x === undefined ? cursor.x : next.x;
+        const y = next.y === undefined ? cursor.y : next.y;
         cursor = {
-            mode: next.mode || cursor.mode,
-            x: Math.max(0, Math.min(lim, next.x)),
-            y: Math.max(0, Math.min(lim, next.y)),
+            mode,
+            x: Math.max(0, Math.min(lim, x)),
+            y: Math.max(0, Math.min(lim, y)),
             isH: next.isH === undefined ? cursor.isH : !!next.isH
         };
         if (!silent && handler && handler.onCursor) handler.onCursor(cursor);

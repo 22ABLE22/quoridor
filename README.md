@@ -93,9 +93,11 @@ js/site.js        # page motion: hero art, scroll reveals, tagline reveal, nav
 bench/match.js    # head-to-head engine matches
 tests/rules.test.mjs          # rules + AI regression tests (98 assertions)
 tests/search.test.mjs         # transposition-table move packing (419 checks)
+tests/cursor.test.mjs         # keyboard cursor behaviour (26 assertions)
 tests/worker-inline.check.js  # worker command-loop verification
 tests/e2e-browser.js          # browser check for the win-rate bars
 tools/qa.js                   # layout + behaviour QA (needs playwright-core)
+tools/qa-rotate.js            # keyboard wall rotation QA (needs playwright-core)
 ```
 
 ### Design system
@@ -159,9 +161,11 @@ overshoot, and a shortest path draws itself on from the pawn outward.
 ```text
 node tests/rules.test.mjs     # rules + AI regressions
 node tests/search.test.mjs    # transposition-table move packing
+node tests/cursor.test.mjs    # keyboard cursor: rotation, clamping, NaN guards
 node tests/worker-inline.check.js
 node tests/e2e-browser.js     # needs Edge or Chrome; skips if neither is found
 node tools/qa.js              # layout, keyboard, reveals, 404 (needs playwright-core)
+node tools/qa-rotate.js       # keyboard wall rotation end to end (needs playwright-core)
 ```
 
 `tools/qa.js` drives a real Chromium at three widths in both themes and checks
@@ -170,6 +174,12 @@ board, the board being focusable with a visible focus ring, `Enter` actually
 playing a keyboard move, scroll reveals firing, the tagline lighting word by
 word, and the theme button repainting. Screenshots land in `tools/shots/`
 (git-ignored). It reads `PW_CORE` for the `playwright-core` path.
+
+`tests/cursor.test.mjs` loads `input.js` behind a small DOM stub and drives the
+keyboard directly. It exists because `R` used to erase the wall preview:
+`setCursor()` took a partial update (`{ isH }`), read `next.x` from it, clamped
+`undefined` to `NaN`, and every later draw computed a position from `NaN`.
+Rotation now preserves the anchor, and the test fails if it stops doing so.
 
 Browser smoke test: open `index.html?autotest=1` — it skips the setup and
 starts an AI vs AI game.

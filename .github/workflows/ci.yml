@@ -30,5 +30,7 @@ jobs:
         run: node tests/search.test.mjs
       - name: Run keyboard cursor tests
         run: node tests/cursor.test.mjs
+      - name: Run hit-test geometry tests
+        run: node tests/hittest.test.mjs
       - name: Check the worker command loop
         run: node tests/worker-inline.check.js

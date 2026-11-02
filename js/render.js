@@ -36,6 +36,14 @@ var QRender = (function () {
     /* ---------------- geometry ---------------- */
     let PAD = 24, CELL = 54, GROOVE = 9;
 
+    /**
+     * Snap radius for wall hit-testing, as a fraction of CELL. GROOVE is 16%
+     * of a cell, so a radius of 0.18 reaches 0.10 of a cell past the groove
+     * on each side: the clickable inner region is the middle 80% of the cell
+     * in both axes, at any board size. Keep in sync with tools/measure-hittest*.js.
+     */
+    const SNAP_RATIO = 0.18;
+
     function computeMetrics(size) {
         const n = QRules.N;
         // n cells + (n-1) grooves + 2*pad; groove ≈ 16% of a cell
@@ -591,10 +599,23 @@ var QRender = (function () {
      * what makes both orientations reachable:
      *   - pointer inside/near a row groove → nearest h-wall
      *   - pointer inside/near a column groove → nearest v-wall
+     *
+     * The snap radius is a pure ratio of the cell, never a pixel constant.
+     * A constant looks harmless but makes the clickable area drift with
+     * screen size: at a 25 px cell a 5 px offset is 20% of the cell, while at
+     * 64 px it is under 8%, so phones — where fingers are least precise —
+     * would get the tightest target. Scaling with CELL keeps every device
+     * identical.
+     *
+     * Geometry: the snap radius reaches `snap - GROOVE/2` past the groove,
+     * and that intrusion is taken off all four sides of a cell. Setting
+     * snap = CELL * 0.18 cuts 10% per side, so the clickable inner region is
+     * a square of side CELL * 0.8 centred on the cell — 80% of the cell in
+     * both axes, at every size.
      */
     function pixelToWall(px, py) {
         const A = QRules.ANCH;
-        const snap = GROOVE * 1.35 + 5;
+        const snap = CELL * SNAP_RATIO;
         const halfLen = CELL + GROOVE / 2;   // half of wall length
         let best = null, bestDist = Infinity;
         for (let y = 0; y < A; y++) {
@@ -645,6 +666,7 @@ var QRender = (function () {
         pixelToCell, pixelToWall,
         invalidateTheme, landed, pathChanged,
         get CELL() { return CELL; }, get GROOVE() { return GROOVE; }, get PAD() { return PAD; },
+        get SNAP_RATIO() { return SNAP_RATIO; },
         readTheme
     };
 })();

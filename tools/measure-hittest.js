@@ -74,7 +74,7 @@ const rows = [];
 for (const size of sizes) {
     const R = load(size);
     const CELL = R.CELL, GROOVE = R.GROOVE, PAD = R.PAD;
-    const snap = GROOVE * 1.35 + 5;
+    const snap = CELL * R.SNAP_RATIO;
 
     // a centre cell, fully surrounded by grooves
     const r = R.cellRect(4, 4);
@@ -120,12 +120,13 @@ for (const r of rows) {
 }
 
 console.log('\nReference scale, cell edge = 100 px:');
-const ref = rows.find(r => Math.abs(r.CELL - 100) < 1);
-if (ref) console.log('  (exact 100 px cell not in the list; see the ratio line below)');
-const k = 5; // the +5px constant in snap
-console.log('  intrusion% = 13.6% + ' + k + 'px / cell');
-for (const u of [40, 57.14, 72, 100, 120]) {
-    const intr = 0.16 * u * 0.85 + k;
+const ratio = 0.18;            // SNAP_RATIO in js/render.js
+const grooveRatio = 0.16;      // GROOVE = CELL * 0.16
+console.log('  snap = CELL * ' + ratio + ', so the intrusion past the groove is');
+console.log('  (CELL*' + ratio + ') - (CELL*' + grooveRatio + '/2) = CELL * ' +
+    (ratio - grooveRatio / 2).toFixed(2) + ' per side');
+for (const u of [25, 40, 57.14, 72, 100, 120]) {
+    const intr = (ratio - grooveRatio / 2) * u;
     console.log(`  cell ${String(u.toFixed(2)).padStart(6)} px -> intrude ${intr.toFixed(2).padStart(6)} px ` +
         `(${(intr / u * 100).toFixed(1)}%), inner ${(u - 2 * intr).toFixed(1)} px (${((u - 2 * intr) / u * 100).toFixed(1)}%)`);
 }
@@ -140,9 +141,9 @@ for (const u of [40, 57.14, 72, 100, 120]) {
         r.cx.toFixed(1) + ',' + r.cy.toFixed(1) + '):');
     const probes = [
         ['exact centre', 0, 0],
-        ['25% in from corner', -R.CELL * 0.25, -R.CELL * 0.25],
-        ['10% in from corner', -R.CELL * 0.35, -R.CELL * 0.35],
-        ['on the corner itself', -R.CELL / 2 + 0.5, -R.CELL / 2 + 0.5]
+        ['40% of a cell out', -R.CELL * 0.40, -R.CELL * 0.40],
+        ['down the diagonal', -R.CELL * 0.5, -R.CELL * 0.5],
+        ['beyond the inner box', -R.CELL * 0.6, -R.CELL * 0.6]
     ];
     for (const [label, dx, dy] of probes) {
         const px = r.cx + dx, py = r.cy + dy;

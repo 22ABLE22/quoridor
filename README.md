@@ -25,10 +25,15 @@ Live site: <https://22able22.github.io/quoridor/>
   reachability check)
 - **Unified input**: no mode toggle. Click a cell to move, click a groove to
   place a wall; the orientation follows the groove. Legal move targets glow,
-  an illegal wall preview shows a red slash
+  an illegal wall preview shows a red slash. The clickable part of a cell is
+  the middle **80%** of it, in both axes, at every screen size — the wall
+  snap radius scales with the cell rather than using a pixel offset, so a
+  phone and a desktop behave identically
 - **Keyboard play**: the board is a tab stop. Arrow keys move a cursor,
-  Enter plays, `W` switches to wall placement, `R` rotates the wall, `Esc`
-  goes back to moving. Every action is announced in the status line
+  Enter plays, `W` toggles wall placement, `R` rotates the wall, `Esc` goes
+  back to moving. Coming back from a wall puts the cursor on the cell you
+  left, and placing a wall returns you to your pawn. Every action is
+  announced in the status line
 - **Color-coded walls**: every wall is painted in the color of the player
   who placed it, so you can read each side's blocking strategy at a glance
 - **Game aids**: live shortest-distance counters, last-move trail, undo
@@ -93,11 +98,14 @@ js/site.js        # page motion: hero art, scroll reveals, tagline reveal, nav
 bench/match.js    # head-to-head engine matches
 tests/rules.test.mjs          # rules + AI regression tests (98 assertions)
 tests/search.test.mjs         # transposition-table move packing (419 checks)
-tests/cursor.test.mjs         # keyboard cursor behaviour (26 assertions)
+tests/cursor.test.mjs         # keyboard cursor behaviour (37 assertions)
+tests/hittest.test.mjs        # pixel → cell/wall geometry (31 assertions)
 tests/worker-inline.check.js  # worker command-loop verification
 tests/e2e-browser.js          # browser check for the win-rate bars
 tools/qa.js                   # layout + behaviour QA (needs playwright-core)
-tools/qa-rotate.js            # keyboard wall rotation QA (needs playwright-core)
+tools/qa-rotate.js            # keyboard wall rotation + W toggle (needs playwright-core)
+tools/measure-hittest.js      # prints the hit-test geometry table
+tools/measure-hittest2.js     # closed-form and border-cell checks for the same rule
 ```
 
 ### Design system
@@ -161,11 +169,12 @@ overshoot, and a shortest path draws itself on from the pawn outward.
 ```text
 node tests/rules.test.mjs     # rules + AI regressions
 node tests/search.test.mjs    # transposition-table move packing
-node tests/cursor.test.mjs    # keyboard cursor: rotation, clamping, NaN guards
+node tests/cursor.test.mjs    # keyboard cursor: rotation, W toggle, clamping, NaN guards
+node tests/hittest.test.mjs   # pixel -> cell/wall geometry: the 80% rule, at 10 sizes
 node tests/worker-inline.check.js
 node tests/e2e-browser.js     # needs Edge or Chrome; skips if neither is found
 node tools/qa.js              # layout, keyboard, reveals, 404 (needs playwright-core)
-node tools/qa-rotate.js       # keyboard wall rotation end to end (needs playwright-core)
+node tools/qa-rotate.js       # keyboard wall rotation + W toggle end to end (needs playwright-core)
 ```
 
 `tools/qa.js` drives a real Chromium at three widths in both themes and checks
@@ -174,6 +183,12 @@ board, the board being focusable with a visible focus ring, `Enter` actually
 playing a keyboard move, scroll reveals firing, the tagline lighting word by
 word, and the theme button repainting. Screenshots land in `tools/shots/`
 (git-ignored). It reads `PW_CORE` for the `playwright-core` path.
+
+`tests/hittest.test.mjs` pins the pointer geometry: it walks outward from each
+cell centre in a real 2D-context stub and asserts the clickable region is the
+middle 80% of the cell in both axes, that the ratio does not drift between a
+280 px phone board and a 900 px one, and that no pixel constant survives inside
+the snap radius. Reintroducing the old absolute offset fails it.
 
 `tests/cursor.test.mjs` loads `input.js` behind a small DOM stub and drives the
 keyboard directly. It exists because `R` used to erase the wall preview:

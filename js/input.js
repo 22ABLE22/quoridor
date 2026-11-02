@@ -28,6 +28,8 @@ var QInput = (function () {
 
     /** Keyboard cursor: mode 'cell' → 9x9 grid, 'wall' → 8x8 anchor grid. */
     let cursor = { mode: 'cell', x: 4, y: 4, isH: true };
+    /** The cell the player was moving on, remembered across a wall detour. */
+    let lastCell = null;
 
     function bind(h) { handler = h; }
 
@@ -67,6 +69,7 @@ var QInput = (function () {
     /** Reset the cursor onto a cell (pointer tap, mode switch, new game). */
     function placeCursor(cell, silent) {
         if (!cell) return;
+        lastCell = { x: cell.x, y: cell.y };
         setCursor({ mode: 'cell', x: cell.x, y: cell.y }, silent);
     }
 
@@ -77,6 +80,7 @@ var QInput = (function () {
      */
     function focusPlayer(pos) {
         if (!pos) return;
+        lastCell = { x: pos.x, y: pos.y };
         setCursor({ mode: 'cell', x: pos.x, y: pos.y }, true);
     }
 
@@ -97,11 +101,20 @@ var QInput = (function () {
         }
         if (k === 'w' || k === 'W') {
             e.preventDefault();
-            // Seed the wall cursor from the current cell so it lands nearby.
-            const anchor = cursor.mode === 'wall'
-                ? { x: cursor.x, y: cursor.y }
-                : { x: Math.min(cursor.x, QRules.ANCH - 1), y: Math.min(cursor.y, QRules.ANCH - 1) };
-            setCursor({ mode: 'wall', x: anchor.x, y: anchor.y });
+            if (cursor.mode === 'wall') {
+                // Toggle back to moving. Return to the cell the player was on
+                // before aiming a wall, not to whatever anchor is left over.
+                const back = lastCell || { x: Math.min(cursor.x, QRules.N - 1), y: Math.min(cursor.y, QRules.N - 1) };
+                setCursor({ mode: 'cell', x: back.x, y: back.y });
+            } else {
+                lastCell = { x: cursor.x, y: cursor.y };
+                // Seed the wall cursor from the current cell so it lands nearby.
+                setCursor({
+                    mode: 'wall',
+                    x: Math.min(cursor.x, QRules.ANCH - 1),
+                    y: Math.min(cursor.y, QRules.ANCH - 1)
+                });
+            }
             return;
         }
         if (k === 'r' || k === 'R') {
@@ -112,7 +125,8 @@ var QInput = (function () {
         if (k === 'Escape') {
             if (cursor.mode !== 'cell') {
                 e.preventDefault();
-                setCursor({ mode: 'cell', x: Math.min(cursor.x, QRules.N - 1), y: Math.min(cursor.y, QRules.N - 1) });
+                const back = lastCell || { x: Math.min(cursor.x, QRules.N - 1), y: Math.min(cursor.y, QRules.N - 1) };
+                setCursor({ mode: 'cell', x: back.x, y: back.y });
             }
             return;
         }

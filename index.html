@@ -124,7 +124,7 @@
       <div class="card board-card">
         <div class="board-frame">
           <canvas id="board" width="600" height="600" tabindex="0"
-                  role="application" aria-label="Quoridor board. Use arrow keys to move the cursor, Enter to play, W to place a wall."
+                  role="application" aria-label="Quoridor board. Use arrow keys to move the cursor, Enter to play, W to toggle wall placement."
                   aria-describedby="boardHelp"></canvas>
           <div class="board-empty" id="boardEmpty">
             <h3>Pick your seats</h3>
@@ -137,7 +137,7 @@
         <div class="status" id="statusBar" role="status" aria-live="polite">
           <span class="meta">Set up the seats to start a game</span>
         </div>
-        <p id="boardHelp" class="hint sr-only">Arrow keys move the cursor between cells. Enter plays the highlighted move. Press W to switch to wall placement, arrow keys to choose a groove, R to rotate the wall, Enter to place it, Escape to go back to moving.</p>
+        <p id="boardHelp" class="hint sr-only">Arrow keys move the cursor between cells. Enter plays the highlighted move. Press W to toggle wall placement on and off; while it is on, arrow keys choose a groove, R rotates the wall, and Enter places it. Escape also returns to moving.</p>
       </div>
 
       <aside class="sidebar" aria-label="Game panel">
@@ -255,7 +255,7 @@
       </details>
       <details class="faq-item reveal">
         <summary>Can I play with the keyboard?<svg class="icon" aria-hidden="true"><use href="#i-caret"/></svg></summary>
-        <p>Tab to the board, then use the arrow keys to move a cursor and Enter to play. Press W to switch into wall placement, arrow keys to pick a groove, R to rotate the wall, and Escape to return to moving. Every move is also announced in the status line.</p>
+        <p>Tab to the board, then use the arrow keys to move a cursor and Enter to play. Press W to toggle wall placement on and off; while it is on the arrows pick a groove and R rotates the wall, and W again (or Escape) puts you back on your pawn. Every move is announced in the status line.</p>
       </details>
       <details class="faq-item reveal">
         <summary>What does undo do in a game against the AI?<svg class="icon" aria-hidden="true"><use href="#i-caret"/></svg></summary>

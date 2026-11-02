@@ -100,8 +100,51 @@ const finite = c => Number.isFinite(c.x) && Number.isFinite(c.y);
 
 /* ---------------- tests ---------------- */
 
+// W toggles wall placement on and off, and comes back to the same cell.
+{
+    QInput.placeCursor({ x: 5, y: 2 });
+    key('w');
+    ok(QInput.cursor.mode === 'wall', 'W enters wall mode');
+    ok(QInput.cursor.x === 5 && QInput.cursor.y === 2, 'the wall cursor is seeded from the cell');
+
+    key('ArrowLeft');
+    key('ArrowDown');
+    key('r');
+    ok(QInput.cursor.mode === 'wall', 'aiming keeps wall mode on');
+
+    key('w');
+    ok(QInput.cursor.mode === 'cell', 'W again leaves wall mode');
+    ok(QInput.cursor.x === 5 && QInput.cursor.y === 2,
+        'toggling back returns to the cell, not the last anchor (' + JSON.stringify(QInput.cursor) + ')');
+
+    // A third W goes back into wall mode, reseeded from the cell.
+    key('w');
+    ok(QInput.cursor.mode === 'wall', 'W is a toggle, not a one-way switch');
+    key('w');
+    ok(QInput.cursor.mode === 'cell', 'and back again');
+}
+
+// The shift-modified W (uppercase) behaves the same.
+{
+    key('W');
+    ok(QInput.cursor.mode === 'wall', 'uppercase W also enters wall mode');
+    key('W');
+    ok(QInput.cursor.mode === 'cell', 'uppercase W also leaves it');
+}
+
+// Escape and W both leave wall mode, and both return to the remembered cell.
+{
+    QInput.placeCursor({ x: 1, y: 7 });
+    key('w');
+    key('ArrowUp');
+    key('Escape');
+    ok(QInput.cursor.mode === 'cell', 'Escape leaves wall mode');
+    ok(QInput.cursor.x === 1 && QInput.cursor.y === 7, 'Escape returns to the remembered cell');
+}
+
 // The exact reported sequence: W, arrows, R.
 {
+    QInput.placeCursor({ x: 4, y: 4 });
     key('w');
     ok(QInput.cursor.mode === 'wall', 'W enters wall mode');
     const before = { x: QInput.cursor.x, y: QInput.cursor.y, isH: QInput.cursor.isH };

@@ -208,8 +208,8 @@ var QApp = (function () {
                 '<span class="meta">' + distText + '</span>');
         } else {
             const hint = QInput.cursor.mode === 'wall'
-                ? 'W / R to aim a wall, Esc to move'
-                : 'click a cell, or a groove for a wall';
+                ? 'arrows aim · R rotates · W or Esc returns to moving'
+                : 'click a cell, or press W to aim a wall';
             QUI.setStatus(who +
                 '<span class="meta">' + p.walls + ' walls left · ' + distText + ' · ' + hint + '</span>');
         }
@@ -255,6 +255,10 @@ var QApp = (function () {
             }
             QRules.applyWall(st, pi, wall.x, wall.y, wall.isH);
             QRender.landed(wall.x, wall.y, wall.isH);
+            // A wall is spent, so the next decision is almost always a move.
+            // Leaving the keyboard in wall mode means the next Enter aims
+            // another wall at the same anchor instead of stepping the pawn.
+            QInput.placeCursor(st.players[pi].pos, true);
             afterAction();
             return;
         }

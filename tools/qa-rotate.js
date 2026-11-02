@@ -1,8 +1,5 @@
-// End-to-end check for keyboard wall rotation.
-//
-// Reproduces the reported bug against the real page in a real browser:
-// press W, move to an anchor, press R, and assert that a wall preview is
-// still on screen afterwards (the cursor did not collapse to NaN).
+// End-to-end check for the W toggle (wall placement on and off) plus the
+// rotation regression it sits next to.
 //
 //   node tools/qa-rotate.js
 'use strict';
@@ -39,16 +36,12 @@ function check(name, cond, detail) {
     console.log((cond ? 'PASS  ' : 'FAIL  ') + name + (detail ? '  (' + detail + ')' : ''));
 }
 
-/** Read the live cursor and whether a wall preview would be drawn. */
 function cursorState(page) {
     return page.evaluate(() => {
         const c = QInput.cursor;
-        // the app draws a groove preview when the cursor is in wall mode
         return {
-            mode: c.mode,
-            x: c.x, y: c.y, isH: c.isH,
-            finite: Number.isFinite(c.x) && Number.isFinite(c.y),
-            hasHandler: typeof QInput.bind === 'function'
+            mode: c.mode, x: c.x, y: c.y, isH: c.isH,
+            finite: Number.isFinite(c.x) && Number.isFinite(c.y)
         };
     });
 }
@@ -70,53 +63,91 @@ function cursorState(page) {
 
     await page.locator('#board').focus();
 
-    // W → wall mode
+    /* ---------- W toggles both ways ---------- */
+    // Capture the cell BEFORE pressing W: that is the cell W must return to.
+    const originCell = await cursorState(page);
+    check('the cursor starts on a cell', originCell.mode === 'cell', JSON.stringify(originCell));
+
     await page.keyboard.press('w');
     await page.waitForTimeout(120);
     let s = await cursorState(page);
     check('W enters wall mode', s.mode === 'wall', JSON.stringify(s));
-    check('wall cursor starts finite', s.finite, JSON.stringify(s));
+    check('wall cursor starts finite', s.finite);
+    // The anchor grid is 8x8 (0..7) while cells are 9x9, so a seed on a
+    // border cell is clamped, not copied. Assert the clamp explicitly.
+    const ANCH = 8;
+    check('the wall anchor is seeded from the cell, clamped to the anchor grid',
+        s.x === Math.min(originCell.x, ANCH - 1) && s.y === Math.min(originCell.y, ANCH - 1),
+        JSON.stringify(originCell) + ' -> ' + JSON.stringify(s));
 
-    // move a couple of anchors
     await page.keyboard.press('ArrowRight');
     await page.keyboard.press('ArrowUp');
     await page.waitForTimeout(120);
-    const beforeRotate = await cursorState(page);
-    check('arrows move the wall anchor',
-        beforeRotate.x !== s.x || beforeRotate.y !== s.y, JSON.stringify(beforeRotate));
+    const moved = await cursorState(page);
+    check('arrows move the wall anchor', moved.x !== s.x || moved.y !== s.y,
+        JSON.stringify(moved));
 
     await page.evaluate(() => document.getElementById('play').scrollIntoView({ block: 'start' }));
     await page.waitForTimeout(300);
-    await page.screenshot({ path: path.join(OUT, 'rotate-1-before.png') });
+    await page.screenshot({ path: path.join(OUT, 'w-1-wall-mode.png') });
 
-    // R → rotate. This is the reported failure.
+    await page.keyboard.press('w');
+    await page.waitForTimeout(200);
+    const back = await cursorState(page);
+    check('W again leaves wall mode', back.mode === 'cell', JSON.stringify(back));
+    check('W again returns to the cell you left, not the anchor',
+        back.x === originCell.x && back.y === originCell.y,
+        JSON.stringify(originCell) + ' <- ' + JSON.stringify(back) +
+        ' (anchor was ' + moved.x + ',' + moved.y + ')');
+    check('the returned cursor is finite', back.finite);
+    await page.screenshot({ path: path.join(OUT, 'w-2-back-to-move.png') });
+
+    // a third press goes back in: it is a toggle, not a one-way switch
+    await page.keyboard.press('w');
+    await page.waitForTimeout(150);
+    check('W is a toggle (third press re-enters)', (await cursorState(page)).mode === 'wall');
+    await page.keyboard.press('w');
+    await page.waitForTimeout(150);
+    check('W toggles back out again', (await cursorState(page)).mode === 'cell');
+
+    /* ---------- the rotation regression still holds ---------- */
+    await page.keyboard.press('w');
+    await page.keyboard.press('ArrowRight');
+    await page.waitForTimeout(150);
+    const beforeRotate = await cursorState(page);
     await page.keyboard.press('r');
     await page.waitForTimeout(200);
     const afterRotate = await cursorState(page);
-    check('R keeps a finite anchor (the reported bug)', afterRotate.finite, JSON.stringify(afterRotate));
-    check('R keeps the same anchor position',
+    check('R keeps a finite anchor', afterRotate.finite, JSON.stringify(afterRotate));
+    check('R keeps the same anchor',
         afterRotate.x === beforeRotate.x && afterRotate.y === beforeRotate.y,
         JSON.stringify(beforeRotate) + ' -> ' + JSON.stringify(afterRotate));
-    check('R flips the orientation', afterRotate.isH === !beforeRotate.isH, `${beforeRotate.isH} -> ${afterRotate.isH}`);
-    check('R stays in wall mode', afterRotate.mode === 'wall');
-    await page.screenshot({ path: path.join(OUT, 'rotate-2-after.png') });
+    check('R flips the orientation', afterRotate.isH === !beforeRotate.isH,
+        `${beforeRotate.isH} -> ${afterRotate.isH}`);
 
-    // a second R returns to the original orientation
-    await page.keyboard.press('r');
-    await page.waitForTimeout(200);
-    const afterTwo = await cursorState(page);
-    check('R twice restores the orientation', afterTwo.isH === beforeRotate.isH, `${beforeRotate.isH} -> ${afterTwo.isH}`);
-    check('R twice keeps a finite anchor', afterTwo.finite, JSON.stringify(afterTwo));
-
-    // the wall must actually be placeable after rotating
-    await page.keyboard.press('r');
-    await page.waitForTimeout(150);
+    /* ---------- Enter still places the rotated wall ---------- */
     const historyBefore = await page.evaluate(() => QApp.state.history.length);
     await page.keyboard.press('Enter');
     await page.waitForTimeout(700);
     const historyAfter = await page.evaluate(() => QApp.state.history.length);
-    check('Enter places the rotated wall', historyAfter > historyBefore, `${historyBefore} -> ${historyAfter}`);
-    await page.screenshot({ path: path.join(OUT, 'rotate-3-placed.png') });
+    check('Enter places the wall', historyAfter > historyBefore, `${historyBefore} -> ${historyAfter}`);
+
+    /* ---------- both status hints advertise the toggle ---------- */
+    // Wait until it is the human's turn again, then read the hint in each mode.
+    await page.waitForFunction(() => {
+        const st = QApp.state;
+        return st && st.winner === null && st.players[st.turn].type === 'human';
+    }, null, { timeout: 15000 });
+    await page.locator('#board').focus();
+
+    const cellHint = await page.evaluate(() => document.getElementById('statusBar').textContent);
+    check('the move-mode hint mentions W', /press W/i.test(cellHint), cellHint.trim().slice(0, 90));
+
+    await page.keyboard.press('w');
+    await page.waitForTimeout(200);
+    const wallHint = await page.evaluate(() => document.getElementById('statusBar').textContent);
+    check('the wall-mode hint mentions W or Esc returning', /W or Esc/i.test(wallHint),
+        wallHint.trim().slice(0, 90));
 
     check('no page errors', errors.length === 0, errors.slice(0, 2).join(' | '));
 

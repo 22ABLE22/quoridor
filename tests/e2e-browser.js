@@ -134,13 +134,21 @@ function connect(url) {
     });
 }
 
+function reportFailure(message) {
+    console.error(message);
+    if (process.env.GITHUB_ACTIONS === 'true') {
+        const escaped = message.replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A');
+        console.error(`::error::${escaped}`);
+    }
+}
+
 /* ---------------- main ---------------- */
 (async () => {
     const browser = findBrowser();
     if (!browser) {
         const message = 'no Chromium/Edge/Chrome found (run "npx playwright install chromium" or set E2E_BROWSER)';
         if (process.env.E2E_REQUIRED === '1') {
-            console.error('FAIL: ' + message);
+            reportFailure('FAIL: ' + message);
             process.exit(1);
         }
         console.log('SKIP: ' + message);
@@ -148,11 +156,19 @@ function connect(url) {
     }
     const server = await startServer();
     const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'quoridor-e2e-'));
+    // Playwright also disables the Chromium sandbox on Linux CI runners.
+    // Keep stderr and process status so a boot failure is diagnosable.
+    const platformArgs = process.platform === 'linux'
+        ? ['--no-sandbox', '--disable-dev-shm-usage'] : [];
     const proc = spawn(browser, [
-        '--headless=new', '--disable-gpu', '--no-first-run', '--no-default-browser-check',
+        '--headless=new', ...platformArgs, '--disable-gpu', '--no-first-run', '--no-default-browser-check',
         `--remote-debugging-port=${CDP_PORT}`, `--user-data-dir=${profile}`,
         '--window-size=1200,900', 'about:blank'
-    ], { stdio: 'ignore' });
+    ], { stdio: ['ignore', 'ignore', 'pipe'] });
+    let browserStderr = '', browserExit = '', browserError = '';
+    proc.stderr.on('data', chunk => { browserStderr = (browserStderr + chunk.toString()).slice(-6000); });
+    proc.on('error', e => { browserError = e.message; });
+    proc.on('exit', (code, signal) => { browserExit = `code=${code}, signal=${signal || 'none'}`; });
 
     const cleanup = () => {
         try { proc.kill(); } catch (e) { /* ignore */ }
@@ -168,7 +184,14 @@ function connect(url) {
             try { tabs = await httpJson('/json/list'); if (tabs && tabs.length) break; } catch (e) { /* booting */ }
             await sleep(250);
         }
-        if (!tabs) throw new Error('DevTools endpoint never came up');
+        if (!tabs || !tabs.length) {
+            const diagnostics = [
+                browserError && `browser spawn error: ${browserError}`,
+                browserExit && `browser exited: ${browserExit}`,
+                browserStderr.trim() && `browser stderr:\n${browserStderr.trim()}`
+            ].filter(Boolean).join('\n');
+            throw new Error('DevTools endpoint never came up' + (diagnostics ? `\n${diagnostics}` : ''));
+        }
         const page = tabs.find(t => t.type === 'page');
         ws = await connect(page.webSocketDebuggerUrl);
 
@@ -266,10 +289,13 @@ function connect(url) {
         console.log((okMoves ? 'PASS' : 'FAIL') + ' a full human + AI exchange completed');
 
         const allOk = okBlank && okSmooth && okGlide && okWorker && okMoves;
+        if (!allOk) {
+            reportFailure(`Browser smoke assertions failed: blanked=${blanked.length}, maxStep=${maxJump}pp, distinct=${distinct.size}, worker=${worker}, moves=${finalState.history}`);
+        }
         cleanup();
         process.exit(allOk ? 0 : 1);
     } catch (e) {
-        console.error('E2E ERROR:', e.message);
+        reportFailure('E2E ERROR: ' + e.message);
         if (ws) ws.close();
         cleanup();
         process.exit(1);

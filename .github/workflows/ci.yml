@@ -21,16 +21,17 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
+      - name: Install development dependencies
+        run: npm ci
       - name: Check JavaScript syntax
         shell: bash
-        run: for file in js/*.js; do node --check "$file"; done
-      - name: Run rules and AI regression tests
-        run: node tests/rules.test.mjs
-      - name: Run transposition-table packing tests
-        run: node tests/search.test.mjs
-      - name: Run keyboard cursor tests
-        run: node tests/cursor.test.mjs
-      - name: Run hit-test geometry tests
-        run: node tests/hittest.test.mjs
-      - name: Check the worker command loop
-        run: node tests/worker-inline.check.js
+        run: for file in js/*.js tests/*.js tools/*.js; do node --check "$file"; done
+      - name: Run unit and engine regression tests
+        run: npm run test:unit
+      - name: Install Chromium for browser smoke tests
+        run: npx playwright install --with-deps chromium
+      - name: Run browser smoke test
+        run: npm run test:browser
+        env:
+          E2E_REQUIRED: 1

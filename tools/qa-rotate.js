@@ -7,9 +7,7 @@ const path = require('path');
 const fs = require('fs');
 const http = require('http');
 
-const PW = process.env.PW_CORE ||
-    'C:/Users/Admin/AppData/Local/npm-cache/_npx/e41f203b7505f1fb/node_modules/playwright-core';
-const { chromium } = require(PW);
+const { launchChromium } = require('./browser');
 
 const ROOT = path.dirname(path.dirname(__filename));
 const OUT = path.join(ROOT, 'tools', 'shots');
@@ -49,7 +47,7 @@ function cursorState(page) {
 (async () => {
     fs.mkdirSync(OUT, { recursive: true });
     const srv = await serve();
-    const browser = await chromium.launch();
+    const browser = await launchChromium();
     const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
     const page = await ctx.newPage();
     const errors = [];

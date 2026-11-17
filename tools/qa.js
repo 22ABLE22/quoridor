@@ -1,5 +1,5 @@
 // Visual + behavioural QA for the redesigned page.
-// Drives a real Chromium (playwright-core) against the built site, captures
+// Drives a real Chromium through the shared Playwright loader, captures
 // screenshots at three widths in both themes, and asserts the things a
 // screenshot cannot: no horizontal overflow, keyboard play, focus ring,
 // scroll reveals firing, and the tagline lighting word by word.
@@ -10,9 +10,7 @@ const path = require('path');
 const fs = require('fs');
 const http = require('http');
 
-const PW = process.env.PW_CORE ||
-    'C:/Users/Admin/AppData/Local/npm-cache/_npx/e41f203b7505f1fb/node_modules/playwright-core';
-const { chromium } = require(PW);
+const { launchChromium } = require('./browser');
 
 const ROOT = path.dirname(path.dirname(__filename));
 const OUT = path.join(ROOT, 'tools', 'shots');
@@ -44,7 +42,7 @@ function check(name, cond, detail) {
 (async () => {
     fs.mkdirSync(OUT, { recursive: true });
     const srv = await serve();
-    const browser = await chromium.launch();
+    const browser = await launchChromium();
     const base = `http://127.0.0.1:${PORT}/`;
 
     /* ---------- 1. layout at three widths, both themes ---------- */

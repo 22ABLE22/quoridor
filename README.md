@@ -2,7 +2,7 @@
 
 An open-source web version of Quoridor, the wall-placement race game: be the
 first to bring your pawn to the opposite edge of the board. Pure front end,
-zero dependencies, no build step. Open `index.html` and play.
+zero runtime dependencies, no build step. Open `index.html` and play.
 
 Live site: <https://22able22.github.io/quoridor/>
 
@@ -102,8 +102,9 @@ tests/cursor.test.mjs         # keyboard cursor behaviour (37 assertions)
 tests/hittest.test.mjs        # pixel → cell/wall geometry (31 assertions)
 tests/worker-inline.check.js  # worker command-loop verification
 tests/e2e-browser.js          # browser check for the win-rate bars
-tools/qa.js                   # layout + behaviour QA (needs playwright-core)
-tools/qa-rotate.js            # keyboard wall rotation + W toggle (needs playwright-core)
+tools/browser.js             # shared Playwright loading for the QA suites
+tools/qa.js                   # layout + behaviour QA
+tools/qa-rotate.js            # keyboard wall rotation + W toggle
 tools/measure-hittest.js      # prints the hit-test geometry table
 tools/measure-hittest2.js     # closed-form and border-cell checks for the same rule
 ```
@@ -167,22 +168,33 @@ overshoot, and a shortest path draws itself on from the pawn outward.
 ## Tests
 
 ```text
-node tests/rules.test.mjs     # rules + AI regressions
-node tests/search.test.mjs    # transposition-table move packing
-node tests/cursor.test.mjs    # keyboard cursor: rotation, W toggle, clamping, NaN guards
-node tests/hittest.test.mjs   # pixel -> cell/wall geometry: the 80% rule, at 10 sizes
-node tests/worker-inline.check.js
-node tests/e2e-browser.js     # needs Edge or Chrome; skips if neither is found
-node tools/qa.js              # layout, keyboard, reveals, 404 (needs playwright-core)
-node tools/qa-rotate.js       # keyboard wall rotation + W toggle end to end (needs playwright-core)
+npm ci                            # install the locked, development-only Playwright dependency
+npx playwright install chromium   # install its matching browser
+npm run test:unit                 # rules, search, cursor, hit-test and worker checks
+npm run test:browser              # real Chromium win-rate and worker smoke test
+npm test                          # unit + browser
+npm run qa:layout                 # layout, keyboard, reveals and 404
+npm run qa:rotate                 # keyboard wall rotation + W toggle
+npm run qa                        # both QA suites
 ```
+
+npm is only needed for development checks: the game still has zero runtime
+dependencies and opens directly from `file://`. Every unit test can also be run
+directly with `node`, without installing the development dependency.
+
+`tests/e2e-browser.js` starts its own static server and uses `E2E_BROWSER`, the
+Playwright-managed Chromium, or an installed Edge/Chrome. It skips when no
+browser is found for local convenience; setting `E2E_REQUIRED=1` makes that a
+failure instead. CI installs the locked Chromium and sets this required mode.
 
 `tools/qa.js` drives a real Chromium at three widths in both themes and checks
 what a screenshot cannot: no horizontal overflow, the floating nav clearing the
 board, the board being focusable with a visible focus ring, `Enter` actually
 playing a keyboard move, scroll reveals firing, the tagline lighting word by
 word, and the theme button repainting. Screenshots land in `tools/shots/`
-(git-ignored). It reads `PW_CORE` for the `playwright-core` path.
+(git-ignored). Both QA scripts resolve the local `playwright` or
+`playwright-core` package; `PW_CORE` can override the module path, and
+`PW_BROWSER` or `E2E_BROWSER` can select a browser executable.
 
 `tests/hittest.test.mjs` pins the pointer geometry: it walks outward from each
 cell centre in a real 2D-context stub and asserts the clickable region is the

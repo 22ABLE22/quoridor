@@ -1,0 +1,21 @@
+{
+  "name": "quoridor",
+  "version": "0.0.0",
+  "private": true,
+  "type": "commonjs",
+  "description": "Pure front-end Quoridor with portable development-time browser checks.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "npm run test:unit && npm run test:browser",
+    "test:unit": "node tests/rules.test.mjs && node tests/search.test.mjs && node tests/cursor.test.mjs && node tests/hittest.test.mjs && node tests/worker-inline.check.js",
+    "test:browser": "node tests/e2e-browser.js",
+    "qa": "npm run qa:layout && npm run qa:rotate",
+    "qa:layout": "node tools/qa.js",
+    "qa:rotate": "node tools/qa-rotate.js"
+  },
+  "devDependencies": {
+    "playwright": "1.63.0"
+  }
+}

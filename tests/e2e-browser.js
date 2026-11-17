@@ -6,10 +6,10 @@
 //   2. when a new estimate lands, the number glides through many distinct
 //      values instead of snapping to the target
 //
-// Self-contained: starts its own static server, launches headless Edge or
-// Chrome over the DevTools protocol, drives the real page, then exits 0/1.
-// Skips (exit 0) when no browser is installed, so it is safe to wire into any
-// environment. CI does not run this; use it locally:
+// Self-contained: starts its own static server, launches headless Chromium,
+// Edge or Chrome over the DevTools protocol, drives the real page, then exits
+// 0/1. A Playwright-managed browser is discovered automatically when present.
+// Locally, no browser means SKIP (exit 0); set E2E_REQUIRED=1 to require one.
 //
 //   node tests/e2e-browser.js
 'use strict';
@@ -38,19 +38,31 @@ function startServer() {
 
 /* ---------------- browser discovery ---------------- */
 function findBrowser() {
+    const explicit = process.env.E2E_BROWSER;
+    if (explicit && fs.existsSync(explicit)) return explicit;
+
+    // Prefer the browser matched to the locked development dependency. This
+    // works on Windows, Linux and macOS without hard-coded cache locations.
+    for (const id of ['playwright', 'playwright-core']) {
+        try {
+            const executable = require(id).chromium.executablePath();
+            if (fs.existsSync(executable)) return executable;
+        } catch (e) { /* optional package or browser is not installed */ }
+    }
+
     const candidates = [
-        process.env.E2E_BROWSER,
         'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',
         'C:/Program Files/Microsoft/Edge/Application/msedge.exe',
         'C:/Program Files/Google/Chrome/Application/chrome.exe',
         'C:/Program Files (x86)/Google/Chrome/Application/chrome.exe',
         '/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser',
         '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
-    ].filter(Boolean);
+    ];
     const direct = candidates.find(p => fs.existsSync(p));
     if (direct) return direct;
-    // A Playwright browser download works too: point E2E_BROWSER at the
-    // executable, or let this find the newest cached build.
+
+    // Last resort for a browser previously downloaded on Windows without a
+    // local Playwright package.
     const cache = process.env.LOCALAPPDATA && path.join(process.env.LOCALAPPDATA, 'ms-playwright');
     if (!cache || !fs.existsSync(cache)) return null;
     const builds = fs.readdirSync(cache)
@@ -67,7 +79,7 @@ function findBrowser() {
     return null;
 }
 
-/* ---------------- minimal CDP client (no npm dependencies) ---------------- */
+/* ---------------- minimal CDP client (no required npm dependencies) ---------------- */
 function httpJson(p) {
     return new Promise((res, rej) => {
         http.get({ host: '127.0.0.1', port: CDP_PORT, path: p }, r => {
@@ -126,7 +138,12 @@ function connect(url) {
 (async () => {
     const browser = findBrowser();
     if (!browser) {
-        console.log('SKIP: no Edge/Chrome found (set E2E_BROWSER to a browser path)');
+        const message = 'no Chromium/Edge/Chrome found (run "npx playwright install chromium" or set E2E_BROWSER)';
+        if (process.env.E2E_REQUIRED === '1') {
+            console.error('FAIL: ' + message);
+            process.exit(1);
+        }
+        console.log('SKIP: ' + message);
         process.exit(0);
     }
     const server = await startServer();
